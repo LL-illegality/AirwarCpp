@@ -1,21 +1,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
-#include <cmath>
-#include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
-#include <SDL3_ttf/SDL_ttf.h>
-#include "Core/Constants.h"
 #include "Core/RNG.h"
-#include "Render/TextureCache.h"
-#include "Render/SpriteRenderer.h"
-#include "Render/Background.h"
-#include "Render/Particle.h"
-#include "UI/HUD.h"
-#include "Audio/SoundEngine.h"
-#include "Audio/MusicPlayer.h"
-#include <fstream>
-#include "json.hpp"
+#include "Net/NetTypes.h"
+#include "Net/MsgTypes.h"
+#include "Net/BinarySerializer.h"
+#include "Net/NetMessage.h"
 
 static int testsPassed = 0;
 static int testsFailed = 0;
@@ -26,227 +16,312 @@ static int testsFailed = 0;
         printf("  FAIL: %s\n  at line %d\n", msg, __LINE__);                \
     } } while(0)
 
-// Resolve absolute asset root from executable location
-static std::string getAssetRoot() {
-    const char* base = SDL_GetBasePath();
-    if (!base) return "";
-    std::string path = base;
-    SDL_free(const_cast<char*>(base));
-    // exe is at: out/build/x64-debug/AirwarCPP/AirwarCPP.exe
-    // repo root: ../../../../ = 4 levels up
-    path += "..\\..\\..\\..\\";
-    return path;
-}
-
 int main(int, char**) {
     setvbuf(stdout, NULL, _IONBF, 0);
-    std::string root = getAssetRoot();
-    printf("AirwarCPP -- Resource Path Test\n");
-    printf("  assetRoot = %s\n\n", root.c_str());
+    printf("AirwarCPP Phase 6 -- Network Protocol Layer\n");
+    printf("===========================================\n\n");
 
     seedRNG();
-    CHECK(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO), "SDL_Init");
-    CHECK(TTF_Init(), "TTF_Init()");
 
-    SDL_Window* win = SDL_CreateWindow("AirwarCPP Resource Test", 800, 664, 0);
-    CHECK(win != NULL, "Window");
-    SDL_Renderer* ren = SDL_CreateRenderer(win, NULL);
-    CHECK(ren != NULL, "Renderer");
+    /* ====== 1. Message type enums ====== */
+    printf("[1] Message type enums\n");
+    CHECK((int)ClientMsgType::connect == 0, "ClientMsgType::connect == 0");
+    CHECK((int)ClientMsgType::joyHat == 6, "ClientMsgType::joyHat == 6");
+    CHECK((int)ServerMsgType::connect == 0, "ServerMsgType::connect == 0");
+    CHECK((int)ServerMsgType::set_title == 6, "ServerMsgType::set_title == 6");
 
-    TextureCache texCache;
-    texCache.init(ren);
-    SpriteRenderer spr;
-    spr.init(ren);
-
-    // Helper: build absolute path
-    auto R = [&](const char* rel) { return root + rel; };
-
-    /* ====== 1. TEXTURES ====== */
-    printf("--- Textures ---\n");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\player1.png")) != NULL, "player1.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\player2.png")) != NULL, "player2.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\en.png")) != NULL, "en.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\enemy.png")) != NULL, "enemy.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\enemy2.png")) != NULL, "enemy2.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\enemy3.png")) != NULL, "enemy3.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\enemy4.png")) != NULL, "enemy4.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\enemy5.png")) != NULL, "enemy5.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\missile.png")) != NULL, "missile.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\rocket.png")) != NULL, "rocket.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\rocket_enemy.png")) != NULL, "rocket_enemy.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\bullet1.png")) != NULL, "bullet1.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\bullet_enemy.png")) != NULL, "bullet_enemy.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\lazer_level1.png")) != NULL, "lazer_level1.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\energyball.png")) != NULL, "energyball.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\energyball_enhanced.png")) != NULL, "energyball_enhanced.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\magabomb.png")) != NULL, "magabomb.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\unit1.png")) != NULL, "unit1.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\big1.png")) != NULL, "big1.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\big2.png")) != NULL, "big2.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\rship.png")) != NULL, "rship.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\rship2.png")) != NULL, "rship2.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\rship3.png")) != NULL, "rship3.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\rship4.png")) != NULL, "rship4.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\ca.png")) != NULL, "ca.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\ready.png")) != NULL, "ready.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_shotgun.png")) != NULL, "item_shotgun.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_missile.png")) != NULL, "item_missile.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_lazer.png")) != NULL, "item_lazer.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_autocannon.png")) != NULL, "item_autocannon.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_super.png")) != NULL, "item_super.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_rocket.png")) != NULL, "item_rocket.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_maga.png")) != NULL, "item_maga.png");
-    CHECK(texCache.load(R("AirwarCPP\\Resources\\images\\item_medic.png")) != NULL, "item_medic.png");
-
-    /* ====== 2. SPRITE RENDERING ====== */
-    printf("--- Sprite Rendering ---\n");
-    auto* pTex = texCache.load(R("AirwarCPP\\Resources\\images\\player1.png"));
-    auto* eTex = texCache.load(R("AirwarCPP\\Resources\\images\\en.png"));
-    spr.draw(pTex, 400, 300, 0, 255);
-    spr.draw(eTex, 200, 150, 45, 128, 1.5f);
-    spr.drawInterpolated(pTex, 100, 100, 200, 300, 0, 90, 0.5f);
-    CHECK(true, "Sprite transforms OK");
-
-    /* ====== 3. BACKGROUND ====== */
-    printf("--- Background ---\n");
-    Background bg;
-    bg.init(ren, 800, 600);
-    for (int i = 0; i < 5; ++i) bg.update();
-    CHECK(true, "Background OK");
-
-    /* ====== 4. PARTICLES ====== */
-    printf("--- Particles ---\n");
-    EnemyExplosion ee(400, 300); CHECK(!ee.particles.empty(), "EnemyExplosion");
-    PlayerExplosion pe(400, 300); CHECK(!pe.particles.empty(), "PlayerExplosion");
-    MissileHit mh(400, 300); CHECK(!mh.particles.empty(), "MissileHit");
-    RocketHit rh(400, 300); CHECK(!rh.particles.empty(), "RocketHit");
-    BulletHit bh(400, 300); CHECK(!bh.particles.empty(), "BulletHit");
-    LazerHit lh(400, 300); CHECK(!lh.particles.empty(), "LazerHit");
-    AutocannonHit ah(400, 300); CHECK(!ah.particles.empty(), "AutocannonHit");
-    NukeExplosion ne(400, 300); CHECK(!ne.particles.empty(), "NukeExplosion");
-    MissileTrail mt(400, 300); mt.emit(1); CHECK(mt.particles.size()==1, "MissileTrail");
-    RocketTrail rt(400, 300); rt.emit(1); CHECK(rt.particles.size()==1, "RocketTrail");
-
-    /* ====== 5. AUDIO LOAD ====== */
-    printf("--- Audio Loading ---\n");
-    SoundEngine se; CHECK(se.init(), "SoundEngine init");
-    CHECK(se.load("shotgun",    R("AirwarCPP\\Resources\\sounds\\shotgun_shoot.wav")), "shotgun_shoot.wav");
-    CHECK(se.load("lazer",      R("AirwarCPP\\Resources\\sounds\\lazer_shoot.wav")), "lazer_shoot.wav");
-    CHECK(se.load("autocannon", R("AirwarCPP\\Resources\\sounds\\autocannon_shoot.wav")), "autocannon_shoot.wav");
-    CHECK(se.load("missile",    R("AirwarCPP\\Resources\\sounds\\missile_shoot.wav")), "missile_shoot.wav");
-    CHECK(se.load("rocket",     R("AirwarCPP\\Resources\\sounds\\rocket_shoot.wav")), "rocket_shoot.wav");
-    CHECK(se.load("explode1",   R("AirwarCPP\\Resources\\sounds\\explode1.wav")), "explode1.wav");
-    CHECK(se.load("explode2",   R("AirwarCPP\\Resources\\sounds\\explode2.wav")), "explode2.wav");
-    CHECK(se.load("explode3",   R("AirwarCPP\\Resources\\sounds\\explode3.wav")), "explode3.wav");
-    CHECK(se.load("explode4",   R("AirwarCPP\\Resources\\sounds\\explode4.wav")), "explode4.wav");
-    CHECK(se.load("explode5",   R("AirwarCPP\\Resources\\sounds\\explode5.wav")), "explode5.wav");
-    CHECK(se.load("prepare",    R("AirwarCPP\\Resources\\sounds\\prepare.wav")), "prepare.wav");
-    CHECK(se.load("unprepare",  R("AirwarCPP\\Resources\\sounds\\unprepare.wav")), "unprepare.wav");
-    CHECK(se.load("itemget",    R("AirwarCPP\\Resources\\sounds\\itemget.wav")), "itemget.wav");
-    CHECK(se.load("transmission",R("AirwarCPP\\Resources\\sounds\\transmission.wav")), "transmission.wav");
-    CHECK(se.load("nuclear",    R("AirwarCPP\\Resources\\sounds\\nuclear_missile_shoot.wav")), "nuclear_missile_shoot.wav");
-
-    /* ====== 6. AUDIO PLAYBACK ====== */
-    printf("--- Audio Playback ---\n");
-    se.play("shotgun"); SDL_Delay(80);
-    se.play("lazer"); SDL_Delay(80);
-    se.play("explode1"); SDL_Delay(80);
-    se.play("missile"); SDL_Delay(80);
-    se.play("rocket"); SDL_Delay(80);
-    se.stopAll(); CHECK(true, "Play + stopAll OK");
-
-    /* ====== 7. MUSIC ====== */
-    printf("--- Music ---\n");
-    MusicPlayer mp;
-    mp.init(&se, root);
-    CHECK(se.load("mainmenu",       R("AirwarCPP\\Resources\\music\\mainmenu.wav")), "mainmenu.wav");
-    CHECK(se.load("future_intro",   R("AirwarCPP\\Resources\\music\\future_intro.wav")), "future_intro.wav");
-    CHECK(se.load("future_loop",    R("AirwarCPP\\Resources\\music\\future.wav")), "future.wav");
-    CHECK(se.load("lostcity_intro", R("AirwarCPP\\Resources\\music\\lostcity_intro.wav")), "lostcity_intro.wav");
-    CHECK(se.load("pop_intro",      R("AirwarCPP\\Resources\\music\\pop_intro.wav")), "pop_intro.wav");
-    CHECK(se.load("beach_intro",    R("AirwarCPP\\Resources\\music\\beach_intro.wav")), "beach_intro.wav");
-    CHECK(se.load("escape_intro",   R("AirwarCPP\\Resources\\music\\escape_intro.wav")), "escape_intro.wav");
-    CHECK(se.load("universe41_intro",R("AirwarCPP\\Resources\\music\\universe41_intro.wav")), "universe41_intro.wav");
-    se.stopAll(); CHECK(true, "All music loaded");
-
-    /* ====== 8. HUD ====== */
-    printf("--- HUD ---\n");
-    HUD hud;
-    hud.init(ren, &texCache, &spr, "C:\\Windows\\Fonts\\arial.ttf", 800, 664, root);
-    hud.setVersion("Ver. 1.3.1");
-    hud.setLevel("Level 1");
-    hud.addTitle("Airwar", 120);
-    hud.updateEntity(0, 400, 300, 0, 100, "player1", "Player1", 0, 3, true);
-    hud.updateEntity(1, 500, 200, 90, 60, "en", "Enemy", -1);
-    hud.update(); CHECK(true, "HUD OK");
-
-    /* ====== 9. CONFIG JSON ====== */
-    printf("--- Config JSON ---\n");
+    /* ====== 2. Client message JSON round-trip ====== */
+    printf("[2] Client message JSON round-trip\n");
     {
-        std::string p = R("AirwarCPP\\Resources\\configs\\enemyTypes.json");
-        std::ifstream f(p);
-        if (!f.good()) { CHECK(false, ("enemyTypes.json not found at " + p).c_str()); }
-        else {
-            nlohmann::json j; f >> j;
-            CHECK(j.contains("en"), "enemyTypes has 'en'");
-            CHECK(j.contains("big2"), "enemyTypes has 'big2'");
-        }
+        ConnectMsg cm{"TestPlayer"};
+        auto j = cm.to_json();
+        CHECK(j["playerName"] == "TestPlayer", "ConnectMsg JSON");
+        auto cm2 = ConnectMsg::from_json(j);
+        CHECK(cm2.playerName == "TestPlayer", "ConnectMsg round-trip");
     }
     {
-        std::string p = R("AirwarCPP\\Resources\\configs\\initializeSettings.json");
-        std::ifstream f(p);
-        CHECK(f.good(), ("initializeSettings.json readable at " + p).c_str());
+        KeyMsg km{119};  // 'w'
+        auto j = km.to_json(); CHECK(j["key"] == 119, "KeyMsg JSON");
+        auto km2 = KeyMsg::from_json(j); CHECK(km2.key == 119, "KeyMsg round-trip");
+    }
+    {
+        JoyAxisMsg jam{0, -0.5f};
+        auto j = jam.to_json(); CHECK(j["axis"] == 0, "JoyAxis axis");
+        JoyAxisMsg jam2 = JoyAxisMsg::from_json(j);
+        CHECK(jam2.axis == 0 && jam2.value == -0.5f, "JoyAxis round-trip");
+    }
+    {
+        JoyHatMsg jhm{{1, 0}};
+        auto j = jhm.to_json(); CHECK(j["value"][0] == 1, "JoyHat JSON x=1");
+        auto jhm2 = JoyHatMsg::from_json(j);
+        CHECK(jhm2.value[0] == 1 && jhm2.value[1] == 0, "JoyHat round-trip");
+    }
+    {
+        DisconnectMsg dm; dm.to_json(); CHECK(true, "DisconnectMsg OK");
+        GetMsg gm; gm.to_json(); CHECK(true, "GetMsg OK");
     }
 
-    /* ====== 10. LEVELS JSON ====== */
-    printf("--- Level JSON ---\n");
-    for (int i = 1; i <= 5; ++i) {
-        std::string path = R("AirwarCPP\\Resources\\levels\\") + std::to_string(i) + ".json";
-        std::ifstream f(path);
-        CHECK(f.good(), ("Level " + std::to_string(i) + " - " + path).c_str());
+    /* ====== 3. Server message JSON round-trip ====== */
+    printf("[3] Server message JSON round-trip\n");
+    {
+        ConnectResponseMsg crm{42};
+        CHECK(crm.to_json()["player_id"] == 42, "ConnectResponse JSON");
+        CHECK(ConnectResponseMsg::from_json(crm.to_json()).player_id == 42,
+              "ConnectResponse round-trip");
+    }
+    {
+        GameStateChangedMsg gscm{GameState::inGame};
+        CHECK(gscm.to_json()["state"] == (int)GameState::inGame, "GameStateChanged JSON");
+        auto g2 = GameStateChangedMsg::from_json(gscm.to_json());
+        CHECK(g2.state == GameState::inGame, "GameStateChanged round-trip");
+    }
+    {
+        PlaySoundMsg psm{"shotgun_shoot"};
+        CHECK(psm.to_json()["sound"] == "shotgun_shoot", "PlaySound JSON");
+        CHECK(PlaySoundMsg::from_json(psm.to_json()).sound == "shotgun_shoot",
+              "PlaySound round-trip");
+    }
+    {
+        ParticleEffectMsg pem{"enemy_explosion", 400.0f, 300.0f};
+        auto j = pem.to_json();
+        CHECK(j["effect"] == "enemy_explosion" && j["x"] == 400.0f, "ParticleEffect JSON");
+        auto p2 = ParticleEffectMsg::from_json(j);
+        CHECK(p2.effect == "enemy_explosion" && p2.x == 400.0f, "ParticleEffect round-trip");
+    }
+    {
+        LoadLevelMsg llm{"Level 1"};
+        CHECK(llm.to_json()["level"] == "Level 1", "LoadLevel JSON");
+        CHECK(LoadLevelMsg::from_json(llm.to_json()).level == "Level 1",
+              "LoadLevel round-trip");
+    }
+    {
+        SetTitleMsg stm{"You Win!", 300};
+        auto j = stm.to_json();
+        CHECK(j["title"] == "You Win!" && j["duration"] == 300, "SetTitle JSON");
+        auto s2 = SetTitleMsg::from_json(j);
+        CHECK(s2.title == "You Win!" && s2.duration == 300, "SetTitle round-trip");
     }
 
-    /* ====== 11. ANIMATED DEMO ====== */
-    printf("--- Animated Demo (3s) ---\n");
-    Uint64 start = SDL_GetTicks();
-    int frames = 0;
-    bool running = true;
-    while (running && (SDL_GetTicks() - start < 3000)) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) running = false;
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
+    /* ====== 4. ScreenInfoMsg (complex) ====== */
+    printf("[4] ScreenInfoMsg\n");
+    {
+        ScreenInfoMsg sim;
+        sim.isPaused = false;
+        EntityState e1; e1.id = 0; e1.x = 400; e1.y = 300;
+        e1.rotation = 0; e1.image = "player1";
+        e1.health = 100; e1.isReady = true; e1.player_id = 0;
+        e1.name = "LL"; e1.magabombQuantity = 1;
+        sim.objects.push_back(e1);
+
+        EntityState e2; e2.id = 1; e2.x = 500; e2.y = 100;
+        e2.rotation = 90; e2.image = "en"; e2.health = 50;
+        sim.objects.push_back(e2);
+
+        auto j = sim.to_json();
+        CHECK(j["objects"].size() == 2, "ScreenInfo has 2 objects");
+        CHECK(j["objects"][0]["image"] == "player1", "ScreenInfo obj0 image");
+        CHECK(j["objects"][0]["player_id"] == 0, "ScreenInfo obj0 player_id");
+        CHECK(j["objects"][0]["health"] == 100.0, "ScreenInfo obj0 health");
+        CHECK(j["objects"][0]["name"] == "LL", "ScreenInfo obj0 name");
+        CHECK(j["objects"][1]["image"] == "en", "ScreenInfo obj1 image");
+        CHECK(j["isPaused"] == false, "ScreenInfo isPaused");
+
+        auto sim2 = ScreenInfoMsg::from_json(j);
+        CHECK(sim2.objects.size() == 2, "ScreenInfo round-trip count");
+        CHECK(sim2.objects[0].x == 400.0f && sim2.objects[0].name == "LL",
+              "ScreenInfo round-trip fields");
+        CHECK(sim2.objects[1].image == "en", "ScreenInfo round-trip enemy");
+        CHECK(sim2.isPaused == false, "ScreenInfo round-trip isPaused");
+    }
+
+    /* ====== 5. NetMessage JSON serialization (client) ====== */
+    printf("[5] NetMessage client JSON\n");
+    {
+        NetMessage nm(ConnectMsg{"Hero"});
+        nm.sender = "0";
+        auto jsonStr = nm.str();
+        CHECK(!jsonStr.empty(), "NetMessage::str() non-empty");
+
+        NetMessage parsed = NetMessage::from_json(jsonStr);
+        CHECK(parsed.isClientMsg, "Parsed isClientMsg");
+        CHECK(parsed.sender == "0", "Parsed sender");
+        CHECK(parsed.getClientType() == ClientMsgType::connect, "Parsed client type");
+        auto* cm = std::get_if<ConnectMsg>(&parsed.clientMsg);
+        CHECK(cm != nullptr && cm->playerName == "Hero", "Parsed ConnectMsg content");
+    }
+    {
+        NetMessage nm(KeyMsg{Keys::space});
+        nm.sender = "0";
+        auto parsed = NetMessage::from_json(nm.str());
+        CHECK(parsed.getClientType() == ClientMsgType::keyDown, "KeyMsg parsed type");
+        auto* km = std::get_if<KeyMsg>(&parsed.clientMsg);
+        CHECK(km != nullptr && km->key == Keys::space, "KeyMsg parsed content");
+    }
+    {
+        JoyHatMsg jhm{{-1, 1}};
+        auto j = jhm.to_json();
+        CHECK(j["value"][0] == -1 && j["value"][1] == 1, "JoyHat to_json OK");
+
+        auto jhm2 = JoyHatMsg::from_json(j);
+        CHECK(jhm2.value[0] == -1 && jhm2.value[1] == 1, "JoyHat from_json OK");
+
+        // NetMessage wrapping
+        NetMessage nm(jhm);
+        nm.sender = "0";
+        std::string js = nm.str();
+        auto parsed = NetMessage::from_json(js);
+        CHECK(parsed.sender == "0", "JoyHat NetMessage sender");
+        CHECK(parsed.isClientMsg, "JoyHat NetMessage isClientMsg");
+        auto* jm = std::get_if<JoyHatMsg>(&parsed.clientMsg);
+        CHECK(jm != nullptr && jm->value[0] == -1 && jm->value[1] == 1,
+              "JoyHat NetMessage content");
+    }
+
+    /* ====== 6. NetMessage JSON serialization (server) ====== */
+    printf("[6] NetMessage server JSON\n");
+    {
+        ScreenInfoMsg sim;
+        EntityState e; e.id = 0; e.x = 400; e.y = 300;
+        e.rotation = 0; e.image = "player1"; e.health = 100;
+        sim.objects.push_back(e);
+        NetMessage nm(sim);
+        nm.sender = "server";
+        auto parsed = NetMessage::from_json(nm.str());
+        CHECK(!parsed.isClientMsg, "Server msg parsed as server");
+        CHECK(parsed.getServerType() == ServerMsgType::screen_info,
+              "Parsed screen_info type");
+        auto* sm = std::get_if<ScreenInfoMsg>(&parsed.serverMsg);
+        CHECK(sm != nullptr && sm->objects.size() == 1, "Parsed ScreenInfo content");
+    }
+    {
+        NetMessage nm(SetTitleMsg{"You Win!", 300});
+        nm.sender = "server";
+        auto parsed = NetMessage::from_json(nm.str());
+        CHECK(parsed.getServerType() == ServerMsgType::set_title, "SetTitle type");
+        auto* st = std::get_if<SetTitleMsg>(&parsed.serverMsg);
+        CHECK(st != nullptr && st->title == "You Win!" && st->duration == 300,
+              "SetTitle content");
+    }
+
+    /* ====== 7. Binary serialization (BinaryWriter/Reader) ====== */
+    printf("[7] BinarySerializer\n");
+    {
+        BinaryWriter w;
+        w.writeU8(255); w.writeU16(65535); w.writeFloat(3.14f);
+        w.writeString("hello"); w.writeBool(true);
+        CHECK(w.size() == 1 + 2 + 4 + 1 + 5 + 1, "BinaryWriter correct size");
+
+        BinaryReader r(w.data());
+        CHECK(r.readU8() == 255, "Binary readU8");
+        CHECK(r.readU16() == 65535, "Binary readU16");
+        CHECK(r.readFloat() == 3.14f, "Binary readFloat");
+        CHECK(r.readString() == "hello", "Binary readString");
+        CHECK(r.readBool() == true, "Binary readBool");
+        CHECK(r.done(), "Binary reader exhausted");
+    }
+    {
+        // EntityState binary
+        BinaryWriter w;
+        BinaryEntityState::write(w, 0, 400.0f, 300.0f, 45.0f, 0, 100.0f, true, 0, 1, "LL");
+        CHECK(w.size() > 0, "BinaryEntityState write OK");
+    }
+
+    /* ====== 8. NetMessage binary round-trip ====== */
+    printf("[8] NetMessage binary\n");
+    {
+        NetMessage orig(ConnectMsg{"BinaryPlayer"});
+        auto bytes = NetMessageBinaryCodec::encode(orig);
+        CHECK(bytes.size() > 0, "Binary encode non-empty");
+
+        auto decoded = NetMessageBinaryCodec::decode(bytes);
+        CHECK(decoded.isClientMsg, "Binary decoded client msg");
+        CHECK(decoded.getClientType() == ClientMsgType::connect, "Binary type connect");
+        auto* cm = std::get_if<ConnectMsg>(&decoded.clientMsg);
+        CHECK(cm != nullptr && cm->playerName == "BinaryPlayer",
+              "Binary ConnectMsg content");
+    }
+    {
+        NetMessage orig(KeyMsg{Keys::w});
+        auto bytes = NetMessageBinaryCodec::encode(orig);
+        auto decoded = NetMessageBinaryCodec::decode(bytes);
+        auto* km = std::get_if<KeyMsg>(&decoded.clientMsg);
+        CHECK(km != nullptr && km->key == Keys::w, "Binary KeyMsg");
+    }
+    {
+        NetMessage orig(JoyAxisMsg{1, 0.75f});
+        auto bytes = NetMessageBinaryCodec::encode(orig);
+        auto decoded = NetMessageBinaryCodec::decode(bytes);
+        auto* jm = std::get_if<JoyAxisMsg>(&decoded.clientMsg);
+        CHECK(jm != nullptr && jm->axis == 1 && jm->value == 0.75f, "Binary JoyAxis");
+    }
+    {
+        NetMessage orig(JoyHatMsg{{-1, 1}});
+        auto bytes = NetMessageBinaryCodec::encode(orig);
+        auto decoded = NetMessageBinaryCodec::decode(bytes);
+        auto* jm = std::get_if<JoyHatMsg>(&decoded.clientMsg);
+        CHECK(jm != nullptr && jm->value[0] == -1 && jm->value[1] == 1, "Binary JoyHat");
+    }
+    {
+        NetMessage orig(ConnectResponseMsg{7});
+        auto bytes = NetMessageBinaryCodec::encode(orig);
+        auto decoded = NetMessageBinaryCodec::decode(bytes);
+        CHECK(!decoded.isClientMsg, "Binary server msg");
+        auto* cr = std::get_if<ConnectResponseMsg>(&decoded.serverMsg);
+        CHECK(cr != nullptr && cr->player_id == 7, "Binary ConnectResponse");
+    }
+
+    /* ====== 9. All 13 message types JSON round-trip ====== */
+    printf("[9] All 13 types JSON round-trip\n");
+    {
+        // 6 client types + 7 server types = 13
+        std::vector<NetMessage> msgs;
+        msgs.emplace_back(ConnectMsg{"P1"});
+        msgs.emplace_back(DisconnectMsg{});
+        msgs.emplace_back(GetMsg{});
+        msgs.emplace_back(KeyMsg{32});
+        msgs.emplace_back(JoyAxisMsg{0, 0.5f});
+        msgs.emplace_back(JoyHatMsg{{0, 1}});
+        msgs.emplace_back(ConnectResponseMsg{0});
+        msgs.emplace_back(GameStateChangedMsg{GameState::inGame});
+        msgs.emplace_back(PlaySoundMsg{"explode1"});
+        msgs.emplace_back(ParticleEffectMsg{"enemy_explosion", 400, 300});
+        msgs.emplace_back(LoadLevelMsg{"Level 1"});
+        msgs.emplace_back(SetTitleMsg{"Go!", 60});
+        ScreenInfoMsg sim;
+        EntityState e; e.id=0; e.x=400; e.y=300; e.rotation=0;
+        e.image="player1"; e.health=100;
+        sim.objects.push_back(e);
+        msgs.emplace_back(sim);  // screen_info
+
+        for (auto& m : msgs) {
+            m.sender = m.isClientMsg ? "0" : "server";
+            auto json = m.str();
+            auto parsed = NetMessage::from_json(json);
+            CHECK(parsed.isClientMsg == m.isClientMsg, "Type flag preserved");
+            if (m.isClientMsg) {
+                CHECK(parsed.getClientType() == m.getClientType(), "Client type preserved");
+            } else {
+                CHECK(parsed.getServerType() == m.getServerType(), "Server type preserved");
+            }
         }
-        float t = (SDL_GetTicks() - start) / 1000.0f;
-
-        SDL_SetRenderDrawColor(ren, 35, 90, 150, 255);
-        SDL_RenderClear(ren);
-        bg.update(); bg.draw();
-
-        float cx = 400 + 150 * sinf(t);
-        float cy = 300 + 80 * cosf(t * 0.7f);
-        spr.draw(pTex, cx, cy, t * 45);
-        spr.draw(eTex, 500 + 100 * sinf(t * 0.5f), 200 + 60 * cosf(t * 0.3f), 90 + t * 20);
-
-        hud.updateEntity(0, cx, cy, t * 45, 100, "player1", "Player1", 0, 3, true);
-        hud.update(); hud.draw(0);
-
-        SDL_RenderPresent(ren);
-        SDL_Delay(16);
-        ++frames;
+        CHECK(true, "All 13 types JSON round-trip OK");
     }
-    CHECK(frames > 50, "Demo >50 frames");
 
-    /* ====== 12. CLEANUP ====== */
-    printf("--- Cleanup ---\n");
-    se.cleanup();
-    texCache.clear();
-    SDL_DestroyRenderer(ren);
-    SDL_DestroyWindow(win);
-    CHECK(true, "Clean shutdown");
+    /* ====== 10. NetMessage static type name helpers ====== */
+    printf("[10] Type name helpers\n");
+    CHECK(std::string(NetMessage::clientTypeName(ClientMsgType::keyDown)) == "keyDown",
+          "clientTypeName(keyDown)");
+    CHECK(std::string(NetMessage::serverTypeName(ServerMsgType::screen_info)) == "screen_info",
+          "serverTypeName(screen_info)");
+    CHECK(NetMessage::clientTypeFromName("joyHat") == ClientMsgType::joyHat,
+          "clientTypeFromName(joyHat)");
+    CHECK(NetMessage::serverTypeFromName("load_level") == ServerMsgType::load_level,
+          "serverTypeFromName(load_level)");
 
+    /* ====== Summary ====== */
     int total = testsPassed + testsFailed;
-    printf("\n=============================\n");
-    printf("  Results: %d / %d, %d failed\n", testsPassed, total, testsFailed);
+    printf("\n===========================================\n");
+    printf("  Results: %d / %d passed, %d failed\n",
+           testsPassed, total, testsFailed);
     return testsFailed > 0 ? 1 : 0;
 }
