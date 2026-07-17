@@ -1,7 +1,11 @@
 #pragma once
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
 #include <uv.h>
 #include <vector>
 #include <cstdint>
+#include <cstring>
 
 // Portable ntohs (avoids linking ws2_32.lib on Windows)
 inline uint16_t portable_ntohs(uint16_t v) {
@@ -92,22 +96,21 @@ public:
 
     bool sendTo(const char* buf, size_t len, const struct sockaddr* addr) {
         if (!initialized_) return false;
-        auto* req = new uv_udp_send_t;
-        auto* sendBuf = new uv_buf_t;
-        auto* dataCopy = new std::vector<char>(buf, buf + len);
-        sendBuf->base = dataCopy->data();
-        sendBuf->len = (ULONG)dataCopy->size();
-        req->data = dataCopy;
+        struct SendReq {
+            uv_udp_send_t req;
+            uv_buf_t buf;
+            std::vector<char> data;
+        };
+        auto* sr = new SendReq;
+        sr->data.assign(buf, buf + len);
+        sr->buf.base = sr->data.data();
+        sr->buf.len = (ULONG)sr->data.size();
+        sr->req.data = sr;
 
-        int r = uv_udp_send(req, &handle_, sendBuf, 1, addr, [](uv_udp_send_t* req, int status) {
-            delete (std::vector<char>*)req->data;
-            delete req;
+        int r = uv_udp_send(&sr->req, &handle_, &sr->buf, 1, addr, [](uv_udp_send_t* r, int) {
+            delete (SendReq*)r->data;
         });
-        if (r != 0) {
-            delete dataCopy; delete req; delete sendBuf;
-            return false;
-        }
-        delete sendBuf;
+        if (r != 0) { delete sr; return false; }
         return true;
     }
 

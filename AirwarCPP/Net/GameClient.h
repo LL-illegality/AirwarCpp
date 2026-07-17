@@ -100,45 +100,45 @@ public:
     }
 };
 
-// ── NetworkClient (stub for Phase 7) ───────────────────────────
+// ── NetworkClient (Phase 9: UDP communication) ─────────────────
 class NetworkClient : public GameClient {
-    int playerId_ = 0;
     std::string playerName_ = "{default}";
-    std::string ip_ = "127.0.0.1";
-    int port_ = 8000;
-    Queue<Message> msgQueue_;  // messages received from server
-    Queue<Message> pendingOutbox_;  // messages to send to server
+    Queue<Message> msgQueue_;
+    std::unique_ptr<UdpClient> udp_;
+    bool connected_ = false;
 
 public:
-    NetworkClient(int pid, const std::string& ip, int port,
+    NetworkClient(int, const std::string& ip, int port,
                   const std::string& name = "{default}")
-        : playerId_(pid), playerName_(name), ip_(ip), port_(port) {}
+        : playerName_(name) {
+        udp_ = std::make_unique<UdpClient>();
+        connected_ = udp_->connect(ip, port, playerName_);
+    }
 
-    int getPlayerId() const override { return playerId_; }
+    ~NetworkClient() override { disconnect(); }
+
+    int getPlayerId() const override { return udp_ ? udp_->playerId() : -1; }
     const std::string& getPlayerName() const override { return playerName_; }
     Queue<Message>& getMsgQueue() override { return msgQueue_; }
-    Queue<Message>& getOutbox() { return pendingOutbox_; }
+    bool isConnected() const { return connected_; }
 
     void sendMessage(const Message& msg) override {
-        pendingOutbox_.push(msg);  // queue for network thread
+        if (udp_) udp_->sendMessage(msg);
     }
 
     void update() override {
-        // NetworkClient: game logic runs on server, nothing to do locally
+        if (udp_) {
+            udp_->processIncoming([this](const Message& msg) {
+                msgQueue_.push(msg);
+            });
+        }
     }
 
     void disconnect() override {
-        pendingOutbox_.push(Message(std::to_string(playerId_), "disconnect", {}));
+        if (udp_) { udp_->disconnect(); udp_.reset(); }
+        connected_ = false;
     }
 
-    // Simulate receiving a server message (for testing)
-    void injectServerMessage(const Message& msg) { msgQueue_.push(msg); }
-
-    // Drain and return outbox messages (for testing)
-    std::vector<Message> drainOutbox() {
-        std::vector<Message> msgs;
-        Message m;
-        while (pendingOutbox_.tryPop(m)) msgs.push_back(m);
-        return msgs;
-    }
+    // For testing: direct access
+    UdpClient* udp() { return udp_.get(); }
 };
