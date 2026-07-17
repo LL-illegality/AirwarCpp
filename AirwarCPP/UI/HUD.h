@@ -20,6 +20,7 @@ class HUD {
     TTF_Font* fontLarge_ = nullptr;
     int width_ = 800, height_ = 664;
     std::string version_ = "Ver. 1.3.1";
+    std::string assetRoot_;
     std::string levelInfo_;
     std::vector<TitleInfo> titles_;
     bool fontReady_ = false;
@@ -42,9 +43,11 @@ public:
     }
 
     void init(SDL_Renderer* r, TextureCache* tc, SpriteRenderer* sr,
-              const std::string& fontPath, int w, int h) {
+              const std::string& fontPath, int w, int h,
+              const std::string& assetRoot = "") {
         renderer_ = r; texCache_ = tc; spriteRenderer_ = sr;
         width_ = w; height_ = h;
+        assetRoot_ = assetRoot;
         fontSmall_ = TTF_OpenFont(fontPath.c_str(), 18.0f);
         fontLarge_ = TTF_OpenFont(fontPath.c_str(), 28.0f);
         fontReady_ = (fontSmall_ != nullptr);
@@ -87,7 +90,7 @@ public:
 
             // Draw entity sprite from texture cache
             auto* tex = texCache_ ? texCache_->load(
-                "AirwarCPP\\Resources\\images\\" + e.image + ".png") : nullptr;
+                assetRoot_ + "AirwarCPP\\Resources\\images\\" + e.image + ".png") : nullptr;
             if (tex) spriteRenderer_->draw(tex, dx, dy, dr);
 
             // Draw player name below sprite
@@ -109,7 +112,7 @@ public:
 
             // Ready indicator
             if (e.isReady && e.playerId >= 0 && texCache_) {
-                auto* tick = texCache_->load("AirwarCPP\\Resources\\images\\ready.png");
+                auto* tick = texCache_->load(assetRoot_ + "AirwarCPP\\Resources\\images\\ready.png");
                 if (tick) spriteRenderer_->draw(tick, dx, dy - 48);
             }
 
@@ -227,7 +230,7 @@ private:
 
         // Magabomb icons (textured)
         if (texCache_) {
-            auto* bombTex = texCache_->load("AirwarCPP\\Resources\\images\\item_maga.png");
+            auto* bombTex = texCache_->load(assetRoot_ + "AirwarCPP\\Resources\\images\\item_maga.png");
             if (bombTex) {
                 float bw, bh; SDL_GetTextureSize(bombTex, &bw, &bh);
                 for (int i = 0; i < bombs && i < 10; ++i) {
