@@ -39,18 +39,3 @@ struct Game {
 private:
     int waitTime = 0;
 };
-
-struct SinglePlayerClient {
-    int playerId = 0;
-    std::shared_ptr<Game> game;
-    Queue<Message>& msgQueue;
-    std::string playerName;
-
-    SinglePlayerClient(int pid, std::shared_ptr<Game> g, Queue<Message>& mq,
-                       const std::string& name = "{default}")
-        : playerId(pid), game(std::move(g)), msgQueue(mq), playerName(name) {}
-
-    void newPlayer();
-    void sendMessage(const Message& msg);
-    void update();
-};

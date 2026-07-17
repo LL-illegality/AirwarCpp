@@ -1,11 +1,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <thread>
 #include "Core/RNG.h"
-#include "Net/NetTypes.h"
-#include "Net/MsgTypes.h"
-#include "Net/BinarySerializer.h"
-#include "Net/NetMessage.h"
+#include "Core/Message.h"
+#include "Core/Queue.h"
+#include "Game/Game.h"
+#include "Game/Board.h"
+#include "Game/Item.h"
+#include "Net/GameClient.h"
+#include "Net/MessageDispatcher.h"
 
 static int testsPassed = 0;
 static int testsFailed = 0;
@@ -18,307 +22,272 @@ static int testsFailed = 0;
 
 int main(int, char**) {
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("AirwarCPP Phase 6 -- Network Protocol Layer\n");
+    printf("AirwarCPP Phase 7 -- GameClient Abstraction\n");
     printf("===========================================\n\n");
 
     seedRNG();
 
-    /* ====== 1. Message type enums ====== */
-    printf("[1] Message type enums\n");
-    CHECK((int)ClientMsgType::connect == 0, "ClientMsgType::connect == 0");
-    CHECK((int)ClientMsgType::joyHat == 6, "ClientMsgType::joyHat == 6");
-    CHECK((int)ServerMsgType::connect == 0, "ServerMsgType::connect == 0");
-    CHECK((int)ServerMsgType::set_title == 6, "ServerMsgType::set_title == 6");
+    /* ====== 1. GameClient abstract interface ====== */
+    printf("[1] GameClient abstract interface\n");
+    // Verify we can create both client types through the abstract interface
+    Queue<Message> mq1;
+    auto game1 = std::make_shared<Game>(mq1);
+    SinglePlayerClient spc(0, game1, mq1, "TestPlayer");
+    GameClient* gc = &spc;
+    CHECK(gc->getPlayerId() == 0, "GameClient interface: getPlayerId");
+    CHECK(gc->getPlayerName() == "TestPlayer", "GameClient interface: getPlayerName");
+    CHECK(&gc->getMsgQueue() == &mq1, "GameClient interface: getMsgQueue");
 
-    /* ====== 2. Client message JSON round-trip ====== */
-    printf("[2] Client message JSON round-trip\n");
+    NetworkClient nc(1, "127.0.0.1", 8000, "NetPlayer");
+    gc = &nc;
+    CHECK(gc->getPlayerId() == 1, "NetworkClient via interface: getPlayerId");
+    CHECK(gc->getPlayerName() == "NetPlayer", "NetworkClient via interface: getPlayerName");
+
+    /* ====== 2. SinglePlayerClient: newPlayer ====== */
+    printf("[2] SinglePlayerClient newPlayer\n");
     {
-        ConnectMsg cm{"TestPlayer"};
-        auto j = cm.to_json();
-        CHECK(j["playerName"] == "TestPlayer", "ConnectMsg JSON");
-        auto cm2 = ConnectMsg::from_json(j);
-        CHECK(cm2.playerName == "TestPlayer", "ConnectMsg round-trip");
-    }
-    {
-        KeyMsg km{119};  // 'w'
-        auto j = km.to_json(); CHECK(j["key"] == 119, "KeyMsg JSON");
-        auto km2 = KeyMsg::from_json(j); CHECK(km2.key == 119, "KeyMsg round-trip");
-    }
-    {
-        JoyAxisMsg jam{0, -0.5f};
-        auto j = jam.to_json(); CHECK(j["axis"] == 0, "JoyAxis axis");
-        JoyAxisMsg jam2 = JoyAxisMsg::from_json(j);
-        CHECK(jam2.axis == 0 && jam2.value == -0.5f, "JoyAxis round-trip");
-    }
-    {
-        JoyHatMsg jhm{{1, 0}};
-        auto j = jhm.to_json(); CHECK(j["value"][0] == 1, "JoyHat JSON x=1");
-        auto jhm2 = JoyHatMsg::from_json(j);
-        CHECK(jhm2.value[0] == 1 && jhm2.value[1] == 0, "JoyHat round-trip");
-    }
-    {
-        DisconnectMsg dm; dm.to_json(); CHECK(true, "DisconnectMsg OK");
-        GetMsg gm; gm.to_json(); CHECK(true, "GetMsg OK");
+        Queue<Message> mq;
+        auto game = std::make_shared<Game>(mq);
+        SinglePlayerClient client(0, game, mq, "Hero");
+        client.newPlayer();
+
+        CHECK(game->board.players.size() == 1, "Player added to board");
+        CHECK(game->board.players[0]->name == "Hero", "Player name set");
+        CHECK(game->board.players[0]->x == SCREEN_W / 2.0, "Player x at center");
+        CHECK(game->board.players[0]->y == 2.0 / 3.0 * SCREEN_H, "Player y at 2/3");
+        CHECK(game->board.players[0]->player_id == 0, "Player id == 0");
+        CHECK(game->board.players[0]->image == Images::player1, "Player image player1");
     }
 
-    /* ====== 3. Server message JSON round-trip ====== */
-    printf("[3] Server message JSON round-trip\n");
+    /* ====== 3. SinglePlayerClient: keyDown/keyUp input ====== */
+    printf("[3] SinglePlayerClient input\n");
     {
-        ConnectResponseMsg crm{42};
-        CHECK(crm.to_json()["player_id"] == 42, "ConnectResponse JSON");
-        CHECK(ConnectResponseMsg::from_json(crm.to_json()).player_id == 42,
-              "ConnectResponse round-trip");
-    }
-    {
-        GameStateChangedMsg gscm{GameState::inGame};
-        CHECK(gscm.to_json()["state"] == (int)GameState::inGame, "GameStateChanged JSON");
-        auto g2 = GameStateChangedMsg::from_json(gscm.to_json());
-        CHECK(g2.state == GameState::inGame, "GameStateChanged round-trip");
-    }
-    {
-        PlaySoundMsg psm{"shotgun_shoot"};
-        CHECK(psm.to_json()["sound"] == "shotgun_shoot", "PlaySound JSON");
-        CHECK(PlaySoundMsg::from_json(psm.to_json()).sound == "shotgun_shoot",
-              "PlaySound round-trip");
-    }
-    {
-        ParticleEffectMsg pem{"enemy_explosion", 400.0f, 300.0f};
-        auto j = pem.to_json();
-        CHECK(j["effect"] == "enemy_explosion" && j["x"] == 400.0f, "ParticleEffect JSON");
-        auto p2 = ParticleEffectMsg::from_json(j);
-        CHECK(p2.effect == "enemy_explosion" && p2.x == 400.0f, "ParticleEffect round-trip");
-    }
-    {
-        LoadLevelMsg llm{"Level 1"};
-        CHECK(llm.to_json()["level"] == "Level 1", "LoadLevel JSON");
-        CHECK(LoadLevelMsg::from_json(llm.to_json()).level == "Level 1",
-              "LoadLevel round-trip");
-    }
-    {
-        SetTitleMsg stm{"You Win!", 300};
-        auto j = stm.to_json();
-        CHECK(j["title"] == "You Win!" && j["duration"] == 300, "SetTitle JSON");
-        auto s2 = SetTitleMsg::from_json(j);
-        CHECK(s2.title == "You Win!" && s2.duration == 300, "SetTitle round-trip");
+        Queue<Message> mq;
+        auto game = std::make_shared<Game>(mq);
+        SinglePlayerClient client(0, game, mq);
+        client.newPlayer();
+
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::w}}));
+        auto& kl = game->board.players[0]->pressedKeyList;
+        CHECK(kl.size() == 1 && kl[0] == Keys::w, "keyDown W added to pressedKeyList");
+
+        client.sendMessage(Message("0", "keyUp", {{"key", Keys::w}}));
+        CHECK(kl.empty(), "keyUp W removed from pressedKeyList");
+
+        // Multiple keys
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::a}}));
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::space}}));
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::d}}));
+        CHECK(kl.size() == 3, "Multiple keys pressed");
     }
 
-    /* ====== 4. ScreenInfoMsg (complex) ====== */
-    printf("[4] ScreenInfoMsg\n");
+    /* ====== 4. SinglePlayerClient: pause toggle ====== */
+    printf("[4] SinglePlayerClient pause\n");
     {
-        ScreenInfoMsg sim;
-        sim.isPaused = false;
-        EntityState e1; e1.id = 0; e1.x = 400; e1.y = 300;
-        e1.rotation = 0; e1.image = "player1";
-        e1.health = 100; e1.isReady = true; e1.player_id = 0;
-        e1.name = "LL"; e1.magabombQuantity = 1;
-        sim.objects.push_back(e1);
+        Queue<Message> mq;
+        auto game = std::make_shared<Game>(mq);
+        SinglePlayerClient client(0, game, mq, "Pauser");
+        client.newPlayer();
 
-        EntityState e2; e2.id = 1; e2.x = 500; e2.y = 100;
-        e2.rotation = 90; e2.image = "en"; e2.health = 50;
-        sim.objects.push_back(e2);
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
+        CHECK(game->isPaused, "Game paused on P key");
+        CHECK(game->pausePlayerId == 0, "Pause playerId set");
+        CHECK(game->pausePlayerName == "Pauser", "Pause playerName set");
 
-        auto j = sim.to_json();
-        CHECK(j["objects"].size() == 2, "ScreenInfo has 2 objects");
-        CHECK(j["objects"][0]["image"] == "player1", "ScreenInfo obj0 image");
-        CHECK(j["objects"][0]["player_id"] == 0, "ScreenInfo obj0 player_id");
-        CHECK(j["objects"][0]["health"] == 100.0, "ScreenInfo obj0 health");
-        CHECK(j["objects"][0]["name"] == "LL", "ScreenInfo obj0 name");
-        CHECK(j["objects"][1]["image"] == "en", "ScreenInfo obj1 image");
-        CHECK(j["isPaused"] == false, "ScreenInfo isPaused");
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
+        CHECK(!game->isPaused, "Game unpaused on second P key");
 
-        auto sim2 = ScreenInfoMsg::from_json(j);
-        CHECK(sim2.objects.size() == 2, "ScreenInfo round-trip count");
-        CHECK(sim2.objects[0].x == 400.0f && sim2.objects[0].name == "LL",
-              "ScreenInfo round-trip fields");
-        CHECK(sim2.objects[1].image == "en", "ScreenInfo round-trip enemy");
-        CHECK(sim2.isPaused == false, "ScreenInfo round-trip isPaused");
+        // Different player can't unpause
+        game->board.addPlayer(std::make_shared<Player>(1));
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
+        CHECK(game->isPaused, "Player 0 paused");
+        client.sendMessage(Message("1", "keyDown", {{"key", Keys::p}}));
+        CHECK(game->isPaused, "Player 1 can't unpause for player 0");
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
+        CHECK(!game->isPaused, "Player 0 unpauses");
     }
 
-    /* ====== 5. NetMessage JSON serialization (client) ====== */
-    printf("[5] NetMessage client JSON\n");
+    /* ====== 5. SinglePlayerClient: joyAxis/joyHat ====== */
+    printf("[5] SinglePlayerClient joy input\n");
     {
-        NetMessage nm(ConnectMsg{"Hero"});
-        nm.sender = "0";
-        auto jsonStr = nm.str();
-        CHECK(!jsonStr.empty(), "NetMessage::str() non-empty");
+        Queue<Message> mq;
+        auto game = std::make_shared<Game>(mq);
+        SinglePlayerClient client(0, game, mq);
+        client.newPlayer();
 
-        NetMessage parsed = NetMessage::from_json(jsonStr);
-        CHECK(parsed.isClientMsg, "Parsed isClientMsg");
-        CHECK(parsed.sender == "0", "Parsed sender");
-        CHECK(parsed.getClientType() == ClientMsgType::connect, "Parsed client type");
-        auto* cm = std::get_if<ConnectMsg>(&parsed.clientMsg);
-        CHECK(cm != nullptr && cm->playerName == "Hero", "Parsed ConnectMsg content");
-    }
-    {
-        NetMessage nm(KeyMsg{Keys::space});
-        nm.sender = "0";
-        auto parsed = NetMessage::from_json(nm.str());
-        CHECK(parsed.getClientType() == ClientMsgType::keyDown, "KeyMsg parsed type");
-        auto* km = std::get_if<KeyMsg>(&parsed.clientMsg);
-        CHECK(km != nullptr && km->key == Keys::space, "KeyMsg parsed content");
-    }
-    {
-        JoyHatMsg jhm{{-1, 1}};
-        auto j = jhm.to_json();
-        CHECK(j["value"][0] == -1 && j["value"][1] == 1, "JoyHat to_json OK");
+        client.sendMessage(Message("0", "joyAxis", {{"axis", 0}, {"value", -0.5}}));
+        CHECK(game->board.players[0]->joystickAxisList[0] == -0.5, "joyAxis axis 0 = -0.5");
 
-        auto jhm2 = JoyHatMsg::from_json(j);
-        CHECK(jhm2.value[0] == -1 && jhm2.value[1] == 1, "JoyHat from_json OK");
+        client.sendMessage(Message("0", "joyAxis", {{"axis", 0}, {"value", 0.1}}));
+        CHECK(game->board.players[0]->joystickAxisList[0] == 0, "joyAxis value < 0.2 clamped to 0");
 
-        // NetMessage wrapping
-        NetMessage nm(jhm);
-        nm.sender = "0";
-        std::string js = nm.str();
-        auto parsed = NetMessage::from_json(js);
-        CHECK(parsed.sender == "0", "JoyHat NetMessage sender");
-        CHECK(parsed.isClientMsg, "JoyHat NetMessage isClientMsg");
-        auto* jm = std::get_if<JoyHatMsg>(&parsed.clientMsg);
-        CHECK(jm != nullptr && jm->value[0] == -1 && jm->value[1] == 1,
-              "JoyHat NetMessage content");
+        client.sendMessage(Message("0", "joyHat", {{"value", {1, 0}}}));
+        auto& kl = game->board.players[0]->pressedKeyList;
+        bool hasD = std::find(kl.begin(), kl.end(), Keys::d) != kl.end();
+        CHECK(hasD, "joyHat {1,0} adds D");
+
+        client.sendMessage(Message("0", "joyHat", {{"value", {0, 0}}}));
+        hasD = std::find(kl.begin(), kl.end(), Keys::d) != kl.end();
+        CHECK(!hasD, "joyHat {0,0} removes D");
     }
 
-    /* ====== 6. NetMessage JSON serialization (server) ====== */
-    printf("[6] NetMessage server JSON\n");
+    /* ====== 6. SinglePlayerClient: update drives game ====== */
+    printf("[6] SinglePlayerClient update\n");
     {
-        ScreenInfoMsg sim;
-        EntityState e; e.id = 0; e.x = 400; e.y = 300;
-        e.rotation = 0; e.image = "player1"; e.health = 100;
-        sim.objects.push_back(e);
-        NetMessage nm(sim);
-        nm.sender = "server";
-        auto parsed = NetMessage::from_json(nm.str());
-        CHECK(!parsed.isClientMsg, "Server msg parsed as server");
-        CHECK(parsed.getServerType() == ServerMsgType::screen_info,
-              "Parsed screen_info type");
-        auto* sm = std::get_if<ScreenInfoMsg>(&parsed.serverMsg);
-        CHECK(sm != nullptr && sm->objects.size() == 1, "Parsed ScreenInfo content");
-    }
-    {
-        NetMessage nm(SetTitleMsg{"You Win!", 300});
-        nm.sender = "server";
-        auto parsed = NetMessage::from_json(nm.str());
-        CHECK(parsed.getServerType() == ServerMsgType::set_title, "SetTitle type");
-        auto* st = std::get_if<SetTitleMsg>(&parsed.serverMsg);
-        CHECK(st != nullptr && st->title == "You Win!" && st->duration == 300,
-              "SetTitle content");
+        Queue<Message> mq;
+        auto game = std::make_shared<Game>(mq);
+        SinglePlayerClient client(0, game, mq);
+        client.newPlayer();
+
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::w}}));
+        client.update();  // drives game->update() -> board.update() -> getObjects()
+        CHECK(true, "SinglePlayerClient::update() completed without error");
+        CHECK(!mq.isEmpty(), "Messages produced after update (screen_info)");
     }
 
-    /* ====== 7. Binary serialization (BinaryWriter/Reader) ====== */
-    printf("[7] BinarySerializer\n");
+    /* ====== 7. NetworkClient stub: send queues outbox ====== */
+    printf("[7] NetworkClient outbox\n");
     {
-        BinaryWriter w;
-        w.writeU8(255); w.writeU16(65535); w.writeFloat(3.14f);
-        w.writeString("hello"); w.writeBool(true);
-        CHECK(w.size() == 1 + 2 + 4 + 1 + 5 + 1, "BinaryWriter correct size");
+        NetworkClient nc(1, "192.168.1.1", 8000, "Remote");
+        nc.sendMessage(Message("1", "keyDown", {{"key", Keys::w}}));
+        nc.sendMessage(Message("1", "keyDown", {{"key", Keys::space}}));
+        nc.sendMessage(Message("1", "keyUp", {{"key", Keys::w}}));
 
-        BinaryReader r(w.data());
-        CHECK(r.readU8() == 255, "Binary readU8");
-        CHECK(r.readU16() == 65535, "Binary readU16");
-        CHECK(r.readFloat() == 3.14f, "Binary readFloat");
-        CHECK(r.readString() == "hello", "Binary readString");
-        CHECK(r.readBool() == true, "Binary readBool");
-        CHECK(r.done(), "Binary reader exhausted");
-    }
-    {
-        // EntityState binary
-        BinaryWriter w;
-        BinaryEntityState::write(w, 0, 400.0f, 300.0f, 45.0f, 0, 100.0f, true, 0, 1, "LL");
-        CHECK(w.size() > 0, "BinaryEntityState write OK");
+        auto outbox = nc.drainOutbox();
+        CHECK(outbox.size() == 3, "3 messages queued in outbox");
+        CHECK(outbox[0].type == "keyDown", "First msg type keyDown");
+        CHECK(outbox[0].content["key"] == Keys::w, "First msg key=W");
+        CHECK(outbox[1].content["key"] == Keys::space, "Second msg key=SPACE");
+        CHECK(outbox[2].type == "keyUp", "Third msg type keyUp");
+
+        auto empty = nc.drainOutbox();
+        CHECK(empty.empty(), "Outbox empty after drain");
     }
 
-    /* ====== 8. NetMessage binary round-trip ====== */
-    printf("[8] NetMessage binary\n");
+    /* ====== 8. NetworkClient: disconnect message ====== */
+    printf("[8] NetworkClient disconnect\n");
     {
-        NetMessage orig(ConnectMsg{"BinaryPlayer"});
-        auto bytes = NetMessageBinaryCodec::encode(orig);
-        CHECK(bytes.size() > 0, "Binary encode non-empty");
-
-        auto decoded = NetMessageBinaryCodec::decode(bytes);
-        CHECK(decoded.isClientMsg, "Binary decoded client msg");
-        CHECK(decoded.getClientType() == ClientMsgType::connect, "Binary type connect");
-        auto* cm = std::get_if<ConnectMsg>(&decoded.clientMsg);
-        CHECK(cm != nullptr && cm->playerName == "BinaryPlayer",
-              "Binary ConnectMsg content");
-    }
-    {
-        NetMessage orig(KeyMsg{Keys::w});
-        auto bytes = NetMessageBinaryCodec::encode(orig);
-        auto decoded = NetMessageBinaryCodec::decode(bytes);
-        auto* km = std::get_if<KeyMsg>(&decoded.clientMsg);
-        CHECK(km != nullptr && km->key == Keys::w, "Binary KeyMsg");
-    }
-    {
-        NetMessage orig(JoyAxisMsg{1, 0.75f});
-        auto bytes = NetMessageBinaryCodec::encode(orig);
-        auto decoded = NetMessageBinaryCodec::decode(bytes);
-        auto* jm = std::get_if<JoyAxisMsg>(&decoded.clientMsg);
-        CHECK(jm != nullptr && jm->axis == 1 && jm->value == 0.75f, "Binary JoyAxis");
-    }
-    {
-        NetMessage orig(JoyHatMsg{{-1, 1}});
-        auto bytes = NetMessageBinaryCodec::encode(orig);
-        auto decoded = NetMessageBinaryCodec::decode(bytes);
-        auto* jm = std::get_if<JoyHatMsg>(&decoded.clientMsg);
-        CHECK(jm != nullptr && jm->value[0] == -1 && jm->value[1] == 1, "Binary JoyHat");
-    }
-    {
-        NetMessage orig(ConnectResponseMsg{7});
-        auto bytes = NetMessageBinaryCodec::encode(orig);
-        auto decoded = NetMessageBinaryCodec::decode(bytes);
-        CHECK(!decoded.isClientMsg, "Binary server msg");
-        auto* cr = std::get_if<ConnectResponseMsg>(&decoded.serverMsg);
-        CHECK(cr != nullptr && cr->player_id == 7, "Binary ConnectResponse");
+        NetworkClient nc(1, "localhost", 8765);
+        nc.disconnect();
+        auto outbox = nc.drainOutbox();
+        CHECK(outbox.size() == 1, "Disconnect queued 1 message");
+        CHECK(outbox[0].type == "disconnect", "Disconnect message type");
     }
 
-    /* ====== 9. All 13 message types JSON round-trip ====== */
-    printf("[9] All 13 types JSON round-trip\n");
+    /* ====== 9. NetworkClient: inject server messages ====== */
+    printf("[9] NetworkClient inject server messages\n");
     {
-        // 6 client types + 7 server types = 13
-        std::vector<NetMessage> msgs;
-        msgs.emplace_back(ConnectMsg{"P1"});
-        msgs.emplace_back(DisconnectMsg{});
-        msgs.emplace_back(GetMsg{});
-        msgs.emplace_back(KeyMsg{32});
-        msgs.emplace_back(JoyAxisMsg{0, 0.5f});
-        msgs.emplace_back(JoyHatMsg{{0, 1}});
-        msgs.emplace_back(ConnectResponseMsg{0});
-        msgs.emplace_back(GameStateChangedMsg{GameState::inGame});
-        msgs.emplace_back(PlaySoundMsg{"explode1"});
-        msgs.emplace_back(ParticleEffectMsg{"enemy_explosion", 400, 300});
-        msgs.emplace_back(LoadLevelMsg{"Level 1"});
-        msgs.emplace_back(SetTitleMsg{"Go!", 60});
-        ScreenInfoMsg sim;
-        EntityState e; e.id=0; e.x=400; e.y=300; e.rotation=0;
-        e.image="player1"; e.health=100;
-        sim.objects.push_back(e);
-        msgs.emplace_back(sim);  // screen_info
+        NetworkClient nc(2, "10.0.0.1", 8000);
+        CHECK(nc.getMsgQueue().isEmpty(), "MsgQueue empty initially");
 
-        for (auto& m : msgs) {
-            m.sender = m.isClientMsg ? "0" : "server";
-            auto json = m.str();
-            auto parsed = NetMessage::from_json(json);
-            CHECK(parsed.isClientMsg == m.isClientMsg, "Type flag preserved");
-            if (m.isClientMsg) {
-                CHECK(parsed.getClientType() == m.getClientType(), "Client type preserved");
-            } else {
-                CHECK(parsed.getServerType() == m.getServerType(), "Server type preserved");
-            }
-        }
-        CHECK(true, "All 13 types JSON round-trip OK");
+        // Simulate server sending messages
+        nc.injectServerMessage(
+            Message("server", "screen_info", {{"objects", nlohmann::json::array()},
+                                               {"isPaused", false}, {"pausePlayerName", ""}}));
+        nc.injectServerMessage(
+            Message("server", "game_state_changed", {{"state", (int)GameState::inGame}}));
+        nc.injectServerMessage(
+            Message("server", "playsound", {{"sound", "explode1"}}));
+
+        CHECK(!nc.getMsgQueue().isEmpty(), "Messages received from server");
+        auto msg = nc.getMsgQueue().pop();
+        CHECK(msg.type == "screen_info", "First msg screen_info");
+        msg = nc.getMsgQueue().pop();
+        CHECK(msg.type == "game_state_changed", "Second msg game_state_changed");
+        msg = nc.getMsgQueue().pop();
+        CHECK(msg.type == "playsound", "Third msg playsound");
     }
 
-    /* ====== 10. NetMessage static type name helpers ====== */
-    printf("[10] Type name helpers\n");
-    CHECK(std::string(NetMessage::clientTypeName(ClientMsgType::keyDown)) == "keyDown",
-          "clientTypeName(keyDown)");
-    CHECK(std::string(NetMessage::serverTypeName(ServerMsgType::screen_info)) == "screen_info",
-          "serverTypeName(screen_info)");
-    CHECK(NetMessage::clientTypeFromName("joyHat") == ClientMsgType::joyHat,
-          "clientTypeFromName(joyHat)");
-    CHECK(NetMessage::serverTypeFromName("load_level") == ServerMsgType::load_level,
-          "serverTypeFromName(load_level)");
+    /* ====== 10. NetworkClient: update is no-op ====== */
+    printf("[10] NetworkClient update (no-op)\n");
+    {
+        NetworkClient nc(0, "localhost", 8000);
+        nc.update();  // should not crash or produce messages
+        CHECK(nc.getMsgQueue().isEmpty(), "No messages after NetworkClient update");
+        CHECK(nc.drainOutbox().empty(), "No outbox after update");
+    }
 
-    /* ====== Summary ====== */
+    /* ====== 11. MessageDispatcher basic ====== */
+    printf("[11] MessageDispatcher basic\n");
+    {
+        MessageDispatcher disp;
+        int screenCalls = 0, soundCalls = 0;
+
+        disp.on("screen_info", [&](const Message&) { ++screenCalls; });
+        disp.on("playsound", [&](const Message&) { ++soundCalls; });
+        CHECK(disp.hasHandler("screen_info"), "Handler registered for screen_info");
+        CHECK(disp.hasHandler("playsound"), "Handler registered for playsound");
+        CHECK(!disp.hasHandler("nonexistent"), "No handler for nonexistent");
+
+        disp.dispatch(Message("server", "screen_info", {}));
+        CHECK(screenCalls == 1, "screen_info handler called once");
+        CHECK(soundCalls == 0, "sound handler not called");
+
+        disp.dispatch(Message("server", "playsound", {{"sound", "explode1"}}));
+        CHECK(soundCalls == 1, "playsound handler called once");
+
+        disp.dispatch(Message("server", "unknown_type", {}));
+        CHECK(screenCalls == 1, "screen_info not called for unknown type");
+    }
+
+    /* ====== 12. MessageDispatcher: dispatchAll drains queue ====== */
+    printf("[12] MessageDispatcher dispatchAll\n");
+    {
+        Queue<Message> q;
+        q.push(Message("server", "screen_info", {}));
+        q.push(Message("server", "playsound", {{"sound", "shotgun"}}));
+        q.push(Message("server", "game_state_changed", {{"state", 2}}));
+
+        MessageDispatcher disp;
+        int count = 0;
+        disp.on("screen_info", [&](const Message&) { ++count; });
+        disp.on("playsound", [&](const Message&) { ++count; });
+        disp.on("game_state_changed", [&](const Message&) { ++count; });
+
+        disp.dispatchAll(q);
+        CHECK(count == 3, "dispatchAll processed 3 messages");
+        CHECK(q.isEmpty(), "Queue empty after dispatchAll");
+    }
+
+    /* ====== 13. SinglePlayerClient → MessageDispatcher pipeline ====== */
+    printf("[13] Full pipeline: input->update->message->dispatch\n");
+    {
+        Queue<Message> mq;
+        auto game = std::make_shared<Game>(mq);
+        SinglePlayerClient client(0, game, mq, "Pipeline");
+        client.newPlayer();
+
+        // Process input
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::w}}));
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::space}}));
+
+        // Drive game tick
+        client.update();
+
+        // Drain messages and dispatch
+        MessageDispatcher disp;
+        int screenInfoCount = 0;
+        int stateChangeCount = 0;
+        disp.on("screen_info", [&](const Message&) { ++screenInfoCount; });
+        disp.on("game_state_changed", [&](const Message&) { ++stateChangeCount; });
+        disp.dispatchAll(mq);
+
+        CHECK(screenInfoCount > 0, "screen_info dispatched after update");
+        CHECK(mq.isEmpty(), "All messages drained after dispatchAll");
+
+        // Verify player can be updated
+        client.sendMessage(Message("0", "keyDown", {{"key", Keys::s}}));
+        client.sendMessage(Message("0", "keyUp", {{"key", Keys::w}}));
+        client.update();
+        disp.dispatchAll(mq);
+        CHECK(screenInfoCount > 0, "screen_info dispatched on second tick");
+    }
+
+    /* ====== 14. Cleanup (no resources needed) ====== */
+    printf("[14] Cleanup\n");
+    // All objects use stack allocation; no cleanup needed
+    CHECK(true, "All Phase 7 tests completed");
+
     int total = testsPassed + testsFailed;
     printf("\n===========================================\n");
     printf("  Results: %d / %d passed, %d failed\n",
