@@ -10,6 +10,15 @@
 *.userosscache
 *.sln.docstates
 *.env
+Airwar_python/
+AGENTS.md
+plan.md
+stderr.txt
+stdout.txt
+
+# Optional SDL3 codec DLLs (not needed for basic functionality)
+AirwarCPP/SDL3_image-*/lib/*/optional/
+AirwarCPP/SDL3_mixer-*/lib/*/optional/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
