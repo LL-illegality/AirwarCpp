@@ -25,7 +25,7 @@ set(SDL3_IMAGE_LIB_DIR "${SDL3_IMAGE_DIR}/lib/${SDL_ARCH}")
 set(SDL3_MIXER_LIB_DIR "${SDL3_MIXER_DIR}/lib/${SDL_ARCH}")
 set(SDL3_TTF_LIB_DIR "${SDL3_TTF_DIR}/lib/${SDL_ARCH}")
 
-add_executable(AirwarCPP main.cpp)
+add_executable(AirwarCPP main.cpp Core/Entity.cpp Core/Level.cpp Game/Item.cpp Game/Board.cpp Game/Game.cpp Render/Background.cpp Render/Particle.cpp)
 
 target_include_directories(AirwarCPP PRIVATE ${SDL3_INCLUDE_DIRS})
 target_link_directories(AirwarCPP PRIVATE

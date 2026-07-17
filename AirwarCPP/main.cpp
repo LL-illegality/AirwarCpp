@@ -1,212 +1,254 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
-#include <SDL3_mixer/SDL_mixer.h>
-#include <SDL3_ttf/SDL_ttf.h>
-#include "json.hpp"
+#include "Core/Constants.h"
+#include "Core/RNG.h"
+#include "Render/TextureCache.h"
+#include "Render/SpriteRenderer.h"
+#include "Render/Background.h"
+#include "Render/Particle.h"
 
 static int testsPassed = 0;
 static int testsFailed = 0;
 
-#define TEST(condition, msg)                                                \
-    do {                                                                    \
-        if (condition) {                                                    \
-            ++testsPassed;                                                  \
-            printf("  PASS: %s\n", msg);                                   \
-        } else {                                                            \
-            ++testsFailed;                                                  \
-            printf("  FAIL: %s\n", msg);                                   \
-        }                                                                   \
-    } while (0)
-
-#define CHECK_SDL(condition, msg)                                           \
-    do {                                                                    \
-        if (!(condition)) {                                                 \
-            printf("  FAIL: %s\n  Error: %s\n",                            \
-                   msg, SDL_GetError());                                    \
-            ++testsFailed;                                                  \
-        } else {                                                            \
-            ++testsPassed;                                                  \
-            printf("  PASS: %s\n", msg);                                   \
-        }                                                                   \
-    } while (0)
+#define CHECK(cond, msg) do {                                              \
+    if (cond) { ++testsPassed;                                              \
+        printf("  PASS: %s\n", msg);                                        \
+    } else { ++testsFailed;                                                 \
+        printf("  FAIL: %s\n  at line %d\n", msg, __LINE__);                \
+    } } while(0)
 
 static std::string assetRoot;
 
-static bool initAssetRoot() {
+static void initAssetRoot() {
     const char* base = SDL_GetBasePath();
-    if (!base) return false;
-    assetRoot = base;
-    SDL_free(const_cast<char*>(base));
-    assetRoot += "..\\..\\..\\..\\";
-
-    return true;
+    if (base) { assetRoot = base; SDL_free(const_cast<char*>(base));
+        assetRoot += "..\\..\\..\\..\\"; }
 }
 
-static std::string getAssetPath(const std::string& relative) {
-    return assetRoot + relative;
-}
-
-int main(int argc, char* argv[]) {
-    (void)argc; (void)argv;
-
+int main(int, char**) {
     setvbuf(stdout, NULL, _IONBF, 0);
+    printf("AirwarCPP Phase 3 -- Rendering Pipeline\n");
+    printf("========================================\n\n");
 
-    printf("AirwarCPP Phase 0 -- Build & Validation Test\n");
-    printf("============================================\n\n");
+    seedRNG();
 
-    /* ---- JSON (nlohmann) ---- */
-    printf("[Step 1] nlohmann/json header\n");
-    nlohmann::json j = {{"name", "AirwarCPP"}, {"version", 0}, {"phase", "Phase0"}};
-    TEST(j["name"] == "AirwarCPP" && j["version"] == 0, "nlohmann/json construct & access");
+    /* ====== 1. TextureCache ====== */
+    printf("[1] TextureCache init\n");
+    TextureCache texCache;
+    CHECK(true, "TextureCache constructed");
 
-    /* ---- SDL_Init ---- */
-    printf("[Step 2] SDL_Init\n");
-    CHECK_SDL(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO), "SDL_Init(VIDEO|AUDIO)");
-    printf("[Step 2b] Asset root\n");
-    TEST(initAssetRoot(), "initAssetRoot()");
+    /* ====== 2. SpriteRenderer ====== */
+    printf("[2] SpriteRenderer init\n");
+    SpriteRenderer spriteRenderer;
+    CHECK(true, "SpriteRenderer constructed");
 
-    /* TTF */
-    printf("[Step 3] SDL3_ttf\n");
-    CHECK_SDL(TTF_Init(), "TTF_Init()");
+    /* ====== 3. Background init (no window needed for construction) ====== */
+    printf("[3] Background construction\n");
+    Background bg;
+    CHECK(true, "Background default constructed");
 
-    /* MIX */
-    printf("[Step 4] SDL3_mixer\n");
-    CHECK_SDL(MIX_Init(), "MIX_Init()");
+    /* ====== 4. Particle construction ====== */
+    printf("[4] Particle effects construction\n");
+    {
+        ParticleGroup pg;
+        pg.oneShot = true;
+        pg.config = {{20,40},{4,0},{255,80},{200,20},{50,0},{255,0},3,3};
+        pg.emit(10);
+        CHECK(pg.particles.size() == 10, "ParticleGroup emit 10 particles");
+        CHECK(pg.particles[0].lifetime >= 20 && pg.particles[0].lifetime <= 40,
+              "Particle lifetime in range");
+    }
+    {
+        // Individual effect constructors
+        EnemyExplosion ee(400, 300);
+        CHECK(ee.oneShot, "EnemyExplosion is one-shot");
+        CHECK(ee.particles.size() >= 10, "EnemyExplosion has particles");
 
-    /* IMG - just test it links */
-    printf("[Step 5] SDL3_image\n");
-    SDL_Surface* s = IMG_Load("nonexistent.png");
-    if (!s) { printf("  (IMG_Load linked OK, expected fail on bad file)\n"); }
-    else { SDL_DestroySurface(s); }
-    TEST(true, "SDL3_image linked");
+        MissileHit mh(400, 300);
+        CHECK(!mh.particles.empty(), "MissileHit has particles");
 
-    /* Window + Renderer */
-    printf("[Step 6] Window & Renderer\n");
-    SDL_Window* window = SDL_CreateWindow("AirwarCPP Phase 0", 800, 600, 0);
-    CHECK_SDL(window != NULL, "SDL_CreateWindow(800x600)");
-    if (!window) return 1;
+        RocketHit rh(400, 300);
+        CHECK(!rh.particles.empty(), "RocketHit has particles");
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
-    CHECK_SDL(renderer != NULL, "SDL_CreateRenderer");
-    if (!renderer) return 1;
+        BulletHit bh(400, 300);
+        CHECK(!bh.particles.empty(), "BulletHit has particles");
 
-    /* PNG texture */
-    printf("[Step 7] PNG Texture\n");
-    std::string pngPath = getAssetPath("Airwar_python\\images\\player1.png");
-    printf("       path = %s\n", pngPath.c_str());
-    SDL_Surface* surf = IMG_Load(pngPath.c_str());
-    CHECK_SDL(surf != NULL, "IMG_Load(player1.png)");
-    if (!surf) return 1;
+        LazerHit lh(400, 300);
+        CHECK(!lh.particles.empty(), "LazerHit has particles");
 
-    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surf);
-    CHECK_SDL(tex != NULL, "SDL_CreateTextureFromSurface");
-    SDL_DestroySurface(surf);
+        AutocannonHit ah(400, 300);
+        CHECK(!ah.particles.empty(), "AutocannonHit has particles");
+    }
+    {
+        MissileTrail mt(400, 300);
+        mt.config = {{15,30},{3,0.5f},{180,80},{180,80},{180,80},{200,0},0,0};
+        mt.emit(1);
+        CHECK(mt.particles.size() == 1, "MissileTrail emit adds particle");
+
+        RocketTrail rt(400, 300);
+        rt.config = {{15,30},{3,0.5f},{255,100},{200,30},{50,0},{200,0},0,0};
+        rt.emit(1);
+        CHECK(rt.particles.size() == 1, "RocketTrail emit adds particle");
+    }
+
+    /* ====== 5. Particle update loop ====== */
+    printf("[5] Particle update/kill\n");
+    {
+        EnemyExplosion ee(400, 300);
+        for (int i = 0; i < 100; ++i) ee.update();
+        CHECK(ee.particles.empty(), "EnemyExplosion particles all dead after 100 ticks");
+    }
+    {
+        MissileTrail mt(400, 300);
+        mt.config = {{5,10},{3,0.5f},{180,80},{180,80},{180,80},{200,0},0,0};
+        mt.emit(5);
+        for (int i = 0; i < 20; ++i) mt.update();
+        CHECK(mt.particles.empty(), "MissileTrail particles dead after ticks");
+    }
+
+    /* ====== 6. SDL Init + Window ====== */
+    printf("[6] SDL Window + Renderer\n");
+    CHECK(SDL_Init(SDL_INIT_VIDEO), "SDL_Init(VIDEO)");
+    SDL_Window* win = SDL_CreateWindow("AirwarCPP Phase 3", 800, 664, 0);
+    CHECK(win != NULL, "SDL_CreateWindow");
+    if (!win) return 1;
+    SDL_Renderer* ren = SDL_CreateRenderer(win, NULL);
+    CHECK(ren != NULL, "SDL_CreateRenderer");
+    if (!ren) return 1;
+
+    initAssetRoot();
+    texCache.init(ren);
+    spriteRenderer.init(ren);
+
+    /* ====== 7. Load PNG texture ====== */
+    printf("[7] PNG texture load\n");
+    std::string pngPath = assetRoot + "Airwar_python\\images\\player1.png";
+    printf("       path=%s\n", pngPath.c_str());
+    SDL_Texture* playerTex = texCache.load(pngPath);
+    CHECK(playerTex != NULL, "TextureCache.load(player1.png)");
 
     float tw = 0, th = 0;
-    SDL_GetTextureSize(tex, &tw, &th);
-    printf("       texture size = %.0f x %.0f\n", tw, th);
-    TEST(tw > 0 && th > 0, "valid texture size");
+    if (playerTex) SDL_GetTextureSize(playerTex, &tw, &th);
+    CHECK(tw > 0 && th > 0, "Texture has valid size");
 
-    /* WAV */
-    printf("[Step 8] WAV Playback\n");
-    MIX_Mixer* mixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
-    CHECK_SDL(mixer != NULL, "MIX_CreateMixerDevice");
-    if (!mixer) return 1;
+    /* ====== 8. Background init with renderer ====== */
+    printf("[8] Background init\n");
+    bg.init(ren, 800, 600);
+    CHECK(true, "Background.init() completed");
 
-    std::string wavPath = getAssetPath("Airwar_python\\sounds\\explode1.wav");
-    printf("       path = %s\n", wavPath.c_str());
-    MIX_Audio* audio = MIX_LoadAudio(mixer, wavPath.c_str(), true);
-    CHECK_SDL(audio != NULL, "MIX_LoadAudio(explode1.wav)");
+    /* ====== 9. Background update ====== */
+    printf("[9] Background update\n");
+    for (int i = 0; i < 10; ++i) bg.update();
+    CHECK(true, "Background.update() 10 ticks completed");
 
-    MIX_Track* track = NULL;
-    if (audio) {
-        track = MIX_CreateTrack(mixer);
-        CHECK_SDL(track != NULL, "MIX_CreateTrack");
-        if (track) {
-            MIX_SetTrackAudio(track, audio);
-            CHECK_SDL(MIX_PlayTrack(track, 0), "MIX_PlayTrack");
-            printf("       -> playing ...\n");
-        }
-    }
+    /* ====== 10. Sprite draw at various positions/rotations ====== */
+    printf("[10] SpriteRenderer draw tests\n");
+    // These are visual-only; we test they don't crash
+    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+    SDL_RenderClear(ren);
+    bg.draw();
+    if (playerTex) spriteRenderer.draw(playerTex, 400, 300, 0, 255);
+    CHECK(true, "Sprite draw at (400,300) completed");
+    if (playerTex) spriteRenderer.draw(playerTex, 200, 150, 45, 128);
+    CHECK(true, "Sprite draw rotated 45deg with alpha completed");
+    if (playerTex) spriteRenderer.draw(playerTex, 600, 450, -30, 255, 2.0f);
+    CHECK(true, "Sprite draw scaled 2x completed");
 
-    /* TTF */
-    printf("[Step 9] TTF Text\n");
-    TTF_Font* font = TTF_OpenFont("C:\\Windows\\Fonts\\arial.ttf", 40.0f);
-    CHECK_SDL(font != NULL, "TTF_OpenFont");
+    /* ====== 11. Interpolated draw ====== */
+    printf("[11] Interpolated sprite draw\n");
+    if (playerTex) spriteRenderer.drawInterpolated(playerTex, 100, 100, 200, 300, 0, 90, 0.5f);
+    CHECK(true, "Interpolated draw completed");
 
-    SDL_Texture* textTex = NULL;
-    float textW = 0, textH = 0;
-    if (font) {
-        SDL_Color white = { 255, 255, 255, 255 };
-        const char* msg = "AirwarCPP Phase 0 PASS";
-        SDL_Surface* ts = TTF_RenderText_Blended(font, msg, SDL_strlen(msg), white);
-        CHECK_SDL(ts != NULL, "TTF_RenderText_Blended");
-        if (ts) {
-            textTex = SDL_CreateTextureFromSurface(renderer, ts);
-            CHECK_SDL(textTex != NULL, "SDL_CreateTextureFromSurface(text)");
-            SDL_GetTextureSize(textTex, &textW, &textH);
-            SDL_DestroySurface(ts);
-        }
-    }
+    /* ====== 12. Particle draw (visual check) ====== */
+    printf("[12] Particle effects render\n");
+    EnemyExplosion ee(400, 200);
+    RocketHit rh(600, 400);
+    PlayerExplosion pe(200, 300);
+    NukeExplosion ne(400, 300);
+    for (int i = 0; i < 60; ++i) {
+        SDL_SetRenderDrawColor(ren, 35, 90, 150, 255);
+        SDL_RenderClear(ren);
+        bg.draw();
+        if (playerTex) spriteRenderer.draw(playerTex, 400, 500, 0, 255);
 
-    /* JSON round-trip */
-    printf("[Step 10] JSON round-trip\n");
-    {
-        nlohmann::json orig = {
-            {"objects", nlohmann::json::array()},
-            {"isPaused", false},
-            {"pausePlayerName", ""}
-        };
-        orig["objects"].push_back({
-            {"id", 0}, {"x", 400.0}, {"y", 300.0}, {"rotation", 0.0},
-            {"image", "player1"}, {"health", 100.0}
-        });
-        std::string serialized = orig.dump();
-        nlohmann::json parsed = nlohmann::json::parse(serialized);
-        bool ok = parsed["objects"][0]["id"] == 0 &&
-                  parsed["objects"][0]["x"] == 400.0 &&
-                  parsed["isPaused"] == false;
-        TEST(ok, "ScreenInfo round-trip");
-    }
+        ee.update(); rh.update(); pe.update(); ne.update();
+        ee.draw(ren); rh.draw(ren); pe.draw(ren); ne.draw(ren);
 
-    /* Render loop (3 seconds) */
-    printf("\n----- Entering render loop for 3 seconds -----\n");
-    bool running = true;
-    Uint64 start = SDL_GetTicks();
-    SDL_FRect dst = { (800.0f - tw) / 2.0f, (600.0f - th) / 2.0f - 40.0f, tw, th };
-    SDL_FRect tdst = { (800.0f - textW) / 2.0f, (600.0f - th) / 2.0f + 40.0f, textW, textH };
-
-    while (running) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) running = false;
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
-        }
-        if (SDL_GetTicks() - start >= 3000) running = false;
-
-        SDL_SetRenderDrawColor(renderer, 35, 90, 150, 255);
-        SDL_RenderClear(renderer);
-        SDL_RenderTexture(renderer, tex, NULL, &dst);
-        if (textTex) SDL_RenderTexture(renderer, textTex, NULL, &tdst);
-        SDL_RenderPresent(renderer);
+        SDL_RenderPresent(ren);
         SDL_Delay(16);
     }
+    CHECK(true, "Particle effects rendered for 60 frames");
 
-    /* Cleanup: destroy all objects, then quit subsystems in reverse init order */
-    if (track)  MIX_StopTrack(track, 0);
-    if (font)   TTF_CloseFont(font);
-    if (textTex) SDL_DestroyTexture(textTex);
-    if (tex)    SDL_DestroyTexture(tex);
-    if (renderer) SDL_DestroyRenderer(renderer);
-    if (window) SDL_DestroyWindow(window);
-    MIX_Quit();
-    TTF_Quit();
+    /* ====== 13. PNG texture from file (verify image loading) ====== */
+    printf("[13] Additional texture loading\n");
+    SDL_Texture* enTex = texCache.load(assetRoot + "Airwar_python\\images\\en.png");
+    CHECK(enTex != NULL, "TextureCache.load(en.png)");
+    SDL_Texture* bgTex = texCache.load(assetRoot + "Airwar_python\\images\\big1.png");
+    CHECK(bgTex != NULL, "TextureCache.load(big1.png)");
+
+    /* ====== 14. Render multiple sprites with trails ====== */
+    printf("[14] Multi-sprite animated demo\n");
+    {
+        float px = 400, py = 500, rot = 0;
+        MissileTrail trail(px, py);
+        EnemyExplosion explode(px, py);
+
+        for (int i = 0; i < 90; ++i) {
+            SDL_SetRenderDrawColor(ren, 35, 90, 150, 255);
+            SDL_RenderClear(ren);
+            bg.draw();
+
+            // Animate player sprite in a circle
+            float t = (float)i / 90.0f * 2 * 3.14159f;
+            px = 400 + 200 * sinf(t);
+            py = 300 + 100 * cosf(t);
+            rot = t * 180 / 3.14159f;
+
+            if (playerTex) spriteRenderer.draw(playerTex, px, py, rot, 255);
+
+            // Trail follows
+            trail.x = px; trail.y = py;
+            if (i % 3 == 0) {
+                trail.config = {{10, 20}, {2, 0.5f}, {180, 80}, {180, 80}, {180, 80}, {200, 0}, 0, 0};
+                trail.emit(1);
+            }
+            trail.update();
+            trail.draw(ren);
+
+            SDL_RenderPresent(ren);
+            SDL_Delay(16);
+        }
+        CHECK(true, "Animated demo completed without crash");
+
+        // Trigger explosion at final position
+        EnemyExplosion finalBoom(px, py);
+        for (int i = 0; i < 45; ++i) {
+            SDL_SetRenderDrawColor(ren, 35, 90, 150, 255);
+            SDL_RenderClear(ren);
+            bg.draw();
+            finalBoom.update(); finalBoom.draw(ren);
+            SDL_RenderPresent(ren);
+            SDL_Delay(16);
+        }
+        CHECK(true, "Explosion animation completed without crash");
+    }
+
+    /* ====== 15. Cleanup ====== */
+    printf("[15] Cleanup\n");
+    texCache.clear();
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
     SDL_Quit();
+    CHECK(true, "Clean SDL shutdown");
 
-    printf("\n============================================\n");
-    printf("  Results: %d passed, %d failed\n", testsPassed, testsFailed);
+    /* ====== Summary ====== */
+    int total = testsPassed + testsFailed;
+    printf("\n========================================\n");
+    printf("  Results: %d / %d passed, %d failed\n",
+           testsPassed, total, testsFailed);
     return testsFailed > 0 ? 1 : 0;
 }

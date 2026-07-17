@@ -20,6 +20,9 @@ stdout.txt
 AirwarCPP/SDL3_image-*/lib/*/optional/
 AirwarCPP/SDL3_mixer-*/lib/*/optional/
 
+# libuv local installation (not tracked; fetched via CMake FetchContent)
+AirwarCPP/libuv/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
