@@ -100,7 +100,8 @@ public:
     }
 };
 
-// ── NetworkClient (Phase 9: UDP communication) ─────────────────
+// ── NetworkClient (Phase 9: UDP communication, requires UdpClient.h) ──
+// Note: Include Net/UdpClient.h before this file if using NetworkClient
 class NetworkClient : public GameClient {
     std::string playerName_ = "{default}";
     Queue<Message> msgQueue_;

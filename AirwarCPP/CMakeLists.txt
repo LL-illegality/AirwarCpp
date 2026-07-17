@@ -97,6 +97,7 @@ endfunction()
 # ── Function: copy Resources to output directory ──
 function(copy_resources TARGET)
     add_custom_command(TARGET ${TARGET} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${TARGET}>/Resources"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
             "$<TARGET_FILE_DIR:${TARGET}>/Resources"
