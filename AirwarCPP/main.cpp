@@ -214,9 +214,24 @@ int main(int, char**) {
         }
     }
 
-    /* 10. Cleanup */
-    printf("[10] Complete\n");
-    CHECK(true, "All Phase 10 tests passed");
+    /* 10. Entry points + resources */
+    printf("[10] Entry points + resources\n");
+    {
+        // Verify output directory has Resources
+        std::string resPath = "Resources";
+        auto checkRes = [&](const std::string& file) {
+            FILE* f = fopen((resPath + "\\" + file).c_str(), "r");
+            bool ok = (f != nullptr);
+            if (f) fclose(f);
+            CHECK(ok, ("Resource accessible: " + file).c_str());
+        };
+        checkRes("images\\player1.png");
+        checkRes("images\\en.png");
+        checkRes("sounds\\explode1.wav");
+        checkRes("configs\\enemyTypes.json");
+        checkRes("levels\\1.json");
+    }
+    CHECK(true, "All tests passed");
 
     int total = testsPassed + testsFailed;
     printf("\n===============================\n");
