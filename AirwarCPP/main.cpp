@@ -1,15 +1,13 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <thread>
+#include <chrono>
 #include "Core/RNG.h"
-#include "Core/Message.h"
-#include "Core/Queue.h"
-#include "Game/Game.h"
-#include "Game/Board.h"
-#include "Game/Item.h"
-#include "Net/GameClient.h"
-#include "Net/MessageDispatcher.h"
+#include "Net/UdpSocket.h"
+#include "Net/ReliableChannel.h"
+#include "Net/ConnectionManager.h"
 
 static int testsPassed = 0;
 static int testsFailed = 0;
@@ -22,274 +20,275 @@ static int testsFailed = 0;
 
 int main(int, char**) {
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("AirwarCPP Phase 7 -- GameClient Abstraction\n");
-    printf("===========================================\n\n");
+    printf("AirwarCPP Phase 8 -- UDP Transport Layer\n");
+    printf("========================================\n\n");
 
     seedRNG();
 
-    /* ====== 1. GameClient abstract interface ====== */
-    printf("[1] GameClient abstract interface\n");
-    // Verify we can create both client types through the abstract interface
-    Queue<Message> mq1;
-    auto game1 = std::make_shared<Game>(mq1);
-    SinglePlayerClient spc(0, game1, mq1, "TestPlayer");
-    GameClient* gc = &spc;
-    CHECK(gc->getPlayerId() == 0, "GameClient interface: getPlayerId");
-    CHECK(gc->getPlayerName() == "TestPlayer", "GameClient interface: getPlayerName");
-    CHECK(&gc->getMsgQueue() == &mq1, "GameClient interface: getMsgQueue");
-
-    NetworkClient nc(1, "127.0.0.1", 8000, "NetPlayer");
-    gc = &nc;
-    CHECK(gc->getPlayerId() == 1, "NetworkClient via interface: getPlayerId");
-    CHECK(gc->getPlayerName() == "NetPlayer", "NetworkClient via interface: getPlayerName");
-
-    /* ====== 2. SinglePlayerClient: newPlayer ====== */
-    printf("[2] SinglePlayerClient newPlayer\n");
+    /* ====== 1. PacketHeader encode/decode ====== */
+    printf("[1] PacketHeader encode/decode\n");
     {
-        Queue<Message> mq;
-        auto game = std::make_shared<Game>(mq);
-        SinglePlayerClient client(0, game, mq, "Hero");
-        client.newPlayer();
+        PacketHeader h;
+        h.flags = PacketHeader::FLAG_RELIABLE | PacketHeader::FLAG_FRAGMENT;
+        h.seq = 0x1234;
+        h.ack = 0xABCD;
+        h.ackBits = 0x7F;
 
-        CHECK(game->board.players.size() == 1, "Player added to board");
-        CHECK(game->board.players[0]->name == "Hero", "Player name set");
-        CHECK(game->board.players[0]->x == SCREEN_W / 2.0, "Player x at center");
-        CHECK(game->board.players[0]->y == 2.0 / 3.0 * SCREEN_H, "Player y at 2/3");
-        CHECK(game->board.players[0]->player_id == 0, "Player id == 0");
-        CHECK(game->board.players[0]->image == Images::player1, "Player image player1");
+        CHECK(h.isReliable(), "FLAG_RELIABLE set");
+        CHECK(!h.isAck(), "FLAG_ACK not set");
+        CHECK(h.isFragment(), "FLAG_FRAGMENT set");
+
+        auto bytes = h.encode();
+        CHECK(bytes.size() == 6, "Header encoded to 6 bytes");
+
+        auto h2 = PacketHeader::decode(bytes.data());
+        CHECK(h2.flags == h.flags, "Decoded flags match");
+        CHECK(h2.seq == 0x1234, "Decoded seq match");
+        CHECK(h2.ack == 0xABCD, "Decoded ack match");
+        CHECK(h2.ackBits == 0x7F, "Decoded ackBits match");
+    }
+    {
+        PacketHeader h;
+        h.setReliable();
+        CHECK(h.isReliable() && !h.isAck(), "setReliable");
+        h.setAck();
+        CHECK(h.isReliable() && h.isAck(), "setAck preserves reliable");
+        h.setFragment();
+        CHECK(h.isFragment(), "setFragment");
     }
 
-    /* ====== 3. SinglePlayerClient: keyDown/keyUp input ====== */
-    printf("[3] SinglePlayerClient input\n");
+    /* ====== 2. ReliableChannel: unreliable packets ====== */
+    printf("[2] ReliableChannel unreliable packets\n");
     {
-        Queue<Message> mq;
-        auto game = std::make_shared<Game>(mq);
-        SinglePlayerClient client(0, game, mq);
-        client.newPlayer();
+        int sendCount = 0;
+        ReliableChannel ch([&](const std::vector<uint8_t>&) { ++sendCount; });
 
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::w}}));
-        auto& kl = game->board.players[0]->pressedKeyList;
-        CHECK(kl.size() == 1 && kl[0] == Keys::w, "keyDown W added to pressedKeyList");
-
-        client.sendMessage(Message("0", "keyUp", {{"key", Keys::w}}));
-        CHECK(kl.empty(), "keyUp W removed from pressedKeyList");
-
-        // Multiple keys
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::a}}));
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::space}}));
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::d}}));
-        CHECK(kl.size() == 3, "Multiple keys pressed");
+        std::vector<uint8_t> payload = {'H', 'e', 'l', 'l', 'o'};
+        ch.send(payload, false);
+        CHECK(sendCount == 1, "Unreliable send calls callback");
+        CHECK(ch.pendingCount() == 0, "No pending for unreliable");
     }
 
-    /* ====== 4. SinglePlayerClient: pause toggle ====== */
-    printf("[4] SinglePlayerClient pause\n");
+    /* ====== 3. ReliableChannel: reliable packets ====== */
+    printf("[3] ReliableChannel reliable packets\n");
     {
-        Queue<Message> mq;
-        auto game = std::make_shared<Game>(mq);
-        SinglePlayerClient client(0, game, mq, "Pauser");
-        client.newPlayer();
+        std::vector<std::vector<uint8_t>> sent;
+        ReliableChannel ch([&](const std::vector<uint8_t>& pkt) {
+            sent.push_back(pkt);
+        });
 
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
-        CHECK(game->isPaused, "Game paused on P key");
-        CHECK(game->pausePlayerId == 0, "Pause playerId set");
-        CHECK(game->pausePlayerName == "Pauser", "Pause playerName set");
+        std::vector<uint8_t> payload = {1, 2, 3, 4, 5};
+        ch.send(payload, true);
+        CHECK(sent.size() == 1, "Reliable send produces packet");
+        CHECK(ch.pendingCount() == 1, "Reliable tracked in sendWindow");
 
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
-        CHECK(!game->isPaused, "Game unpaused on second P key");
+        auto& pkt = sent[0];
+        CHECK(pkt.size() == 6 + 5, "Packet = 6 header + 5 payload");
 
-        // Different player can't unpause
-        game->board.addPlayer(std::make_shared<Player>(1));
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
-        CHECK(game->isPaused, "Player 0 paused");
-        client.sendMessage(Message("1", "keyDown", {{"key", Keys::p}}));
-        CHECK(game->isPaused, "Player 1 can't unpause for player 0");
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::p}}));
-        CHECK(!game->isPaused, "Player 0 unpauses");
+        auto hdr = PacketHeader::decode(pkt.data());
+        CHECK(hdr.isReliable(), "Reliable flag set");
+        CHECK(hdr.seq == 0, "First seq == 0");
+
+        std::vector<uint8_t> recvPayload(pkt.begin() + 6, pkt.end());
+        CHECK(recvPayload.size() == 5, "Payload length correct");
     }
 
-    /* ====== 5. SinglePlayerClient: joyAxis/joyHat ====== */
-    printf("[5] SinglePlayerClient joy input\n");
+    /* ====== 4. ReliableChannel: ACK processing ====== */
+    printf("[4] ReliableChannel ACK\n");
     {
-        Queue<Message> mq;
-        auto game = std::make_shared<Game>(mq);
-        SinglePlayerClient client(0, game, mq);
-        client.newPlayer();
+        std::vector<std::vector<uint8_t>> sent;
+        ReliableChannel ch([&](const std::vector<uint8_t>& pkt) { sent.push_back(pkt); });
 
-        client.sendMessage(Message("0", "joyAxis", {{"axis", 0}, {"value", -0.5}}));
-        CHECK(game->board.players[0]->joystickAxisList[0] == -0.5, "joyAxis axis 0 = -0.5");
+        ch.send({10, 20, 30}, true);
+        CHECK(ch.pendingCount() == 1, "Pending before ACK");
 
-        client.sendMessage(Message("0", "joyAxis", {{"axis", 0}, {"value", 0.1}}));
-        CHECK(game->board.players[0]->joystickAxisList[0] == 0, "joyAxis value < 0.2 clamped to 0");
+        // Craft an ACK for seq 0
+        PacketHeader ackH;
+        ackH.setAck();
+        ackH.ack = 0;
+        auto ackPkt = ackH.encode();
 
-        client.sendMessage(Message("0", "joyHat", {{"value", {1, 0}}}));
-        auto& kl = game->board.players[0]->pressedKeyList;
-        bool hasD = std::find(kl.begin(), kl.end(), Keys::d) != kl.end();
-        CHECK(hasD, "joyHat {1,0} adds D");
-
-        client.sendMessage(Message("0", "joyHat", {{"value", {0, 0}}}));
-        hasD = std::find(kl.begin(), kl.end(), Keys::d) != kl.end();
-        CHECK(!hasD, "joyHat {0,0} removes D");
+        auto result = ch.receive(ackPkt.data(), ackPkt.size());
+        CHECK(result.empty(), "ACK returns empty payload");
+        CHECK(ch.pendingCount() == 0, "Pending cleared after ACK");
     }
 
-    /* ====== 6. SinglePlayerClient: update drives game ====== */
-    printf("[6] SinglePlayerClient update\n");
+    /* ====== 5. ReliableChannel: receive in-order ====== */
+    printf("[5] ReliableChannel in-order delivery\n");
     {
-        Queue<Message> mq;
-        auto game = std::make_shared<Game>(mq);
-        SinglePlayerClient client(0, game, mq);
-        client.newPlayer();
-
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::w}}));
-        client.update();  // drives game->update() -> board.update() -> getObjects()
-        CHECK(true, "SinglePlayerClient::update() completed without error");
-        CHECK(!mq.isEmpty(), "Messages produced after update (screen_info)");
+        ReliableChannel ch(nullptr);
+        // Simulate receiving 3 reliable packets with seq 0, 1, 2
+        for (uint16_t seq = 0; seq < 3; ++seq) {
+            PacketHeader h;
+            h.setReliable();
+            h.seq = seq;
+            auto pkt = h.encode();
+            pkt.push_back((uint8_t)('A' + seq));
+            auto result = ch.receive(pkt.data(), pkt.size());
+            CHECK(!result.empty() && result[0] == (uint8_t)('A' + seq),
+                  ("In-order delivery seq=" + std::to_string(seq)).c_str());
+        }
     }
 
-    /* ====== 7. NetworkClient stub: send queues outbox ====== */
-    printf("[7] NetworkClient outbox\n");
+    /* ====== 6. ReliableChannel: out-of-order rejection ====== */
+    printf("[6] ReliableChannel out-of-order\n");
     {
-        NetworkClient nc(1, "192.168.1.1", 8000, "Remote");
-        nc.sendMessage(Message("1", "keyDown", {{"key", Keys::w}}));
-        nc.sendMessage(Message("1", "keyDown", {{"key", Keys::space}}));
-        nc.sendMessage(Message("1", "keyUp", {{"key", Keys::w}}));
-
-        auto outbox = nc.drainOutbox();
-        CHECK(outbox.size() == 3, "3 messages queued in outbox");
-        CHECK(outbox[0].type == "keyDown", "First msg type keyDown");
-        CHECK(outbox[0].content["key"] == Keys::w, "First msg key=W");
-        CHECK(outbox[1].content["key"] == Keys::space, "Second msg key=SPACE");
-        CHECK(outbox[2].type == "keyUp", "Third msg type keyUp");
-
-        auto empty = nc.drainOutbox();
-        CHECK(empty.empty(), "Outbox empty after drain");
+        ReliableChannel ch(nullptr);
+        // Send seq 1 before seq 0
+        PacketHeader h;
+        h.setReliable();
+        h.seq = 1;
+        auto pkt = h.encode();
+        pkt.push_back('B');
+        auto result = ch.receive(pkt.data(), pkt.size());
+        CHECK(result.empty(), "Out-of-order seq 1 rejected");
     }
 
-    /* ====== 8. NetworkClient: disconnect message ====== */
-    printf("[8] NetworkClient disconnect\n");
+    /* ====== 7. ReliableChannel: retransmit ====== */
+    printf("[7] ReliableChannel retransmit\n");
     {
-        NetworkClient nc(1, "localhost", 8765);
-        nc.disconnect();
-        auto outbox = nc.drainOutbox();
-        CHECK(outbox.size() == 1, "Disconnect queued 1 message");
-        CHECK(outbox[0].type == "disconnect", "Disconnect message type");
+        int sendCount = 0;
+        ReliableChannel ch([&](const std::vector<uint8_t>&) { ++sendCount; });
+
+        ch.send({1, 2, 3}, true);
+        CHECK(sendCount == 1, "Initial send");
+
+        // Simulate time passing and update triggering retransmit
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        ch.update();
+        CHECK(sendCount >= 2, "Retransmit triggered after timeout");
     }
 
-    /* ====== 9. NetworkClient: inject server messages ====== */
-    printf("[9] NetworkClient inject server messages\n");
+    /* ====== 8. ConnectionManager: create and track ====== */
+    printf("[8] ConnectionManager basics\n");
     {
-        NetworkClient nc(2, "10.0.0.1", 8000);
-        CHECK(nc.getMsgQueue().isEmpty(), "MsgQueue empty initially");
+        ConnectionManager cm;
+        CHECK(cm.count() == 0, "Empty initially");
 
-        // Simulate server sending messages
-        nc.injectServerMessage(
-            Message("server", "screen_info", {{"objects", nlohmann::json::array()},
-                                               {"isPaused", false}, {"pausePlayerName", ""}}));
-        nc.injectServerMessage(
-            Message("server", "game_state_changed", {{"state", (int)GameState::inGame}}));
-        nc.injectServerMessage(
-            Message("server", "playsound", {{"sound", "explode1"}}));
+        sockaddr_storage addr1{}, addr2{};
+        UdpSocket::makeAddr("127.0.0.1", 8000, addr1);
+        UdpSocket::makeAddr("127.0.0.1", 8001, addr2);
 
-        CHECK(!nc.getMsgQueue().isEmpty(), "Messages received from server");
-        auto msg = nc.getMsgQueue().pop();
-        CHECK(msg.type == "screen_info", "First msg screen_info");
-        msg = nc.getMsgQueue().pop();
-        CHECK(msg.type == "game_state_changed", "Second msg game_state_changed");
-        msg = nc.getMsgQueue().pop();
-        CHECK(msg.type == "playsound", "Third msg playsound");
+        uint32_t id1 = cm.createConnection(addr1);
+        uint32_t id2 = cm.createConnection(addr2);
+        CHECK(cm.count() == 2, "Two connections created");
+        CHECK(id1 != id2, "Unique IDs assigned");
+
+        auto* conn1 = cm.get(id1);
+        CHECK(conn1 != nullptr, "Connection found by ID");
+        CHECK(conn1->state == ConnectionState::CONNECTING, "State == CONNECTING");
+        CHECK(conn1->playerId == -1, "PlayerId == -1 initially");
+
+        cm.setConnected(id1);
+        CHECK(conn1->state == ConnectionState::CONNECTED, "State == CONNECTED after setConnected");
+
+        auto* found = cm.findByAddr(addr1);
+        CHECK(found != nullptr && found->clientId == id1, "findByAddr works");
+        CHECK(cm.findByAddr(addr2) != nullptr, "findByAddr for addr2");
     }
 
-    /* ====== 10. NetworkClient: update is no-op ====== */
-    printf("[10] NetworkClient update (no-op)\n");
+    /* ====== 9. ConnectionManager: remove and timeout ====== */
+    printf("[9] ConnectionManager timeout/remove\n");
     {
-        NetworkClient nc(0, "localhost", 8000);
-        nc.update();  // should not crash or produce messages
-        CHECK(nc.getMsgQueue().isEmpty(), "No messages after NetworkClient update");
-        CHECK(nc.drainOutbox().empty(), "No outbox after update");
+        ConnectionManager cm;
+        sockaddr_storage addr;
+        UdpSocket::makeAddr("127.0.0.1", 9000, addr);
+        uint32_t id = cm.createConnection(addr);
+
+        CHECK(cm.count() == 1, "One connection");
+        cm.remove(id);
+        CHECK(cm.count() == 0, "Removed connection");
+        CHECK(cm.get(id) == nullptr, "Null after removal");
+    }
+    {
+        ConnectionManager cm;
+        sockaddr_storage addr;
+        UdpSocket::makeAddr("10.0.0.1", 5000, addr);
+        auto id = cm.createConnection(addr);
+
+        // Manually simulate timeout by setting lastRecvTime far in the past
+        auto* conn = cm.get(id);
+        conn->lastRecvTime = 1;  // year 1970
+        int timeoutCount = 0;
+        cm.setTimeoutCallback([&](uint32_t) { ++timeoutCount; return true; });
+        cm.checkTimeouts(100000);
+        CHECK(cm.count() == 0, "Timed out connection removed");
+        CHECK(timeoutCount == 1, "Timeout callback fired exactly once");
     }
 
-    /* ====== 11. MessageDispatcher basic ====== */
-    printf("[11] MessageDispatcher basic\n");
+    /* ====== 10. ConnectionManager: active count ====== */
+    printf("[10] ConnectionManager active count\n");
     {
-        MessageDispatcher disp;
-        int screenCalls = 0, soundCalls = 0;
-
-        disp.on("screen_info", [&](const Message&) { ++screenCalls; });
-        disp.on("playsound", [&](const Message&) { ++soundCalls; });
-        CHECK(disp.hasHandler("screen_info"), "Handler registered for screen_info");
-        CHECK(disp.hasHandler("playsound"), "Handler registered for playsound");
-        CHECK(!disp.hasHandler("nonexistent"), "No handler for nonexistent");
-
-        disp.dispatch(Message("server", "screen_info", {}));
-        CHECK(screenCalls == 1, "screen_info handler called once");
-        CHECK(soundCalls == 0, "sound handler not called");
-
-        disp.dispatch(Message("server", "playsound", {{"sound", "explode1"}}));
-        CHECK(soundCalls == 1, "playsound handler called once");
-
-        disp.dispatch(Message("server", "unknown_type", {}));
-        CHECK(screenCalls == 1, "screen_info not called for unknown type");
+        ConnectionManager cm;
+        sockaddr_storage addr;
+        UdpSocket::makeAddr("192.168.1.1", 8000, addr);
+        uint32_t id = cm.createConnection(addr);
+        CHECK(cm.activeCount() == 0, "Not active while CONNECTING");
+        cm.setConnected(id);
+        CHECK(cm.activeCount() == 1, "Active after setConnected");
+        cm.remove(id);
+        CHECK(cm.activeCount() == 0, "Active count 0 after remove");
     }
 
-    /* ====== 12. MessageDispatcher: dispatchAll drains queue ====== */
-    printf("[12] MessageDispatcher dispatchAll\n");
+    /* ====== 11. PacketHeader round-trip stress ====== */
+    printf("[11] PacketHeader stress\n");
     {
-        Queue<Message> q;
-        q.push(Message("server", "screen_info", {}));
-        q.push(Message("server", "playsound", {{"sound", "shotgun"}}));
-        q.push(Message("server", "game_state_changed", {{"state", 2}}));
-
-        MessageDispatcher disp;
-        int count = 0;
-        disp.on("screen_info", [&](const Message&) { ++count; });
-        disp.on("playsound", [&](const Message&) { ++count; });
-        disp.on("game_state_changed", [&](const Message&) { ++count; });
-
-        disp.dispatchAll(q);
-        CHECK(count == 3, "dispatchAll processed 3 messages");
-        CHECK(q.isEmpty(), "Queue empty after dispatchAll");
+        for (int i = 0; i < 5; ++i) {
+            PacketHeader h;
+            h.flags = (uint8_t)(rand() & 7);
+            h.seq = (uint16_t)(rand() & 0xFFFF);
+            h.ack = (uint16_t)(rand() & 0xFFFF);
+            h.ackBits = (uint8_t)(rand() & 0xFF);
+            auto bytes = h.encode();
+            auto h2 = PacketHeader::decode(bytes.data());
+            CHECK(h.flags == h2.flags && h.seq == h2.seq && h.ack == h2.ack && h.ackBits == h2.ackBits,
+                  ("Random round-trip #" + std::to_string(i)).c_str());
+        }
     }
 
-    /* ====== 13. SinglePlayerClient → MessageDispatcher pipeline ====== */
-    printf("[13] Full pipeline: input->update->message->dispatch\n");
+    /* ====== 12. ReliableChannel: sequence number wrapping ====== */
+    printf("[12] ReliableChannel seq wrap\n");
     {
-        Queue<Message> mq;
-        auto game = std::make_shared<Game>(mq);
-        SinglePlayerClient client(0, game, mq, "Pipeline");
-        client.newPlayer();
-
-        // Process input
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::w}}));
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::space}}));
-
-        // Drive game tick
-        client.update();
-
-        // Drain messages and dispatch
-        MessageDispatcher disp;
-        int screenInfoCount = 0;
-        int stateChangeCount = 0;
-        disp.on("screen_info", [&](const Message&) { ++screenInfoCount; });
-        disp.on("game_state_changed", [&](const Message&) { ++stateChangeCount; });
-        disp.dispatchAll(mq);
-
-        CHECK(screenInfoCount > 0, "screen_info dispatched after update");
-        CHECK(mq.isEmpty(), "All messages drained after dispatchAll");
-
-        // Verify player can be updated
-        client.sendMessage(Message("0", "keyDown", {{"key", Keys::s}}));
-        client.sendMessage(Message("0", "keyUp", {{"key", Keys::w}}));
-        client.update();
-        disp.dispatchAll(mq);
-        CHECK(screenInfoCount > 0, "screen_info dispatched on second tick");
+        ReliableChannel ch(nullptr);
+        ch.nextSeq = 0xFFF0;
+        for (int i = 0; i < 5; ++i) {
+            std::vector<uint8_t> payload = {(uint8_t)i};
+            ch.send(payload, true);
+        }
+        CHECK(ch.pendingCount() == 5, "5 packets pending after near-wrap");
     }
 
-    /* ====== 14. Cleanup (no resources needed) ====== */
-    printf("[14] Cleanup\n");
-    // All objects use stack allocation; no cleanup needed
-    CHECK(true, "All Phase 7 tests completed");
+    /* ====== 13. ConnectionManager: clear ====== */
+    printf("[13] ConnectionManager clear\n");
+    {
+        ConnectionManager cm;
+        sockaddr_storage a1, a2;
+        UdpSocket::makeAddr("10.0.0.1", 1, a1);
+        UdpSocket::makeAddr("10.0.0.2", 2, a2);
+        cm.createConnection(a1);
+        cm.createConnection(a2);
+        CHECK(cm.count() == 2, "2 connections before clear");
+        cm.clear();
+        CHECK(cm.count() == 0, "0 connections after clear");
+    }
 
+    /* ====== 14. Address utility ====== */
+    printf("[14] Address utility\n");
+    {
+        sockaddr_storage addr;
+        CHECK(UdpSocket::makeAddr("127.0.0.1", 8080, addr), "makeAddr IPv4");
+        std::string ip; int port;
+        UdpSocket::addrToString(addr, ip, port);
+        CHECK(ip == "127.0.0.1" && port == 8080, "IPv4 round-trip");
+
+        CHECK(UdpSocket::makeAddr("::1", 8080, addr), "makeAddr IPv6");
+        UdpSocket::addrToString(addr, ip, port);
+        CHECK(ip == "::1" && port == 8080, "IPv6 round-trip");
+    }
+
+    /* ====== Summary ====== */
     int total = testsPassed + testsFailed;
-    printf("\n===========================================\n");
+    printf("\n========================================\n");
     printf("  Results: %d / %d passed, %d failed\n",
            testsPassed, total, testsFailed);
     return testsFailed > 0 ? 1 : 0;

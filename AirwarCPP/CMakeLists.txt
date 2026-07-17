@@ -25,14 +25,20 @@ set(SDL3_IMAGE_LIB_DIR "${SDL3_IMAGE_DIR}/lib/${SDL_ARCH}")
 set(SDL3_MIXER_LIB_DIR "${SDL3_MIXER_DIR}/lib/${SDL_ARCH}")
 set(SDL3_TTF_LIB_DIR "${SDL3_TTF_DIR}/lib/${SDL_ARCH}")
 
+# libuv bundled
+set(LIBUV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libuv")
+set(LIBUV_INCLUDE_DIR "${LIBUV_DIR}/include")
+set(LIBUV_LIB_DIR "${LIBUV_DIR}/lib")
+
 add_executable(AirwarCPP main.cpp Core/Entity.cpp Core/Level.cpp Game/Item.cpp Game/Board.cpp Game/Game.cpp Render/Background.cpp Render/Particle.cpp Audio/SoundEngine.h Audio/MusicPlayer.h Config/ConfigPersistence.h UI/InputHandler.h UI/HUD.h UI/GameStateManager.h UI/Tutorial.h)
 
-target_include_directories(AirwarCPP PRIVATE ${SDL3_INCLUDE_DIRS})
+target_include_directories(AirwarCPP PRIVATE ${SDL3_INCLUDE_DIRS} ${LIBUV_INCLUDE_DIR})
 target_link_directories(AirwarCPP PRIVATE
     ${SDL3_LIB_DIR}
     ${SDL3_IMAGE_LIB_DIR}
     ${SDL3_MIXER_LIB_DIR}
     ${SDL3_TTF_LIB_DIR}
+    ${LIBUV_LIB_DIR}
 )
 target_include_directories(AirwarCPP PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(AirwarCPP PRIVATE
@@ -40,6 +46,7 @@ target_link_libraries(AirwarCPP PRIVATE
     SDL3_image
     SDL3_mixer
     SDL3_ttf
+    uv
 )
 
 function(copy_dlls TARGET)
@@ -48,6 +55,7 @@ function(copy_dlls TARGET)
         "${SDL3_IMAGE_LIB_DIR}/SDL3_image.dll"
         "${SDL3_MIXER_LIB_DIR}/SDL3_mixer.dll"
         "${SDL3_TTF_LIB_DIR}/SDL3_ttf.dll"
+        "${LIBUV_DIR}/bin/uv.dll"
     )
     foreach(dll ${DLL_FILES})
         add_custom_command(TARGET ${TARGET} POST_BUILD
