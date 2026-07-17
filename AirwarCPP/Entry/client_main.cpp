@@ -26,11 +26,20 @@
 #include "../Net/UdpClient.h"
 #include "../Net/GameClient.h"
 
-static std::string getExeDir() {
+// Returns normalized project root path (navigates up from exe dir)
+static std::string getProjectRoot() {
     const char* base = SDL_GetBasePath();
     if (!base) return "";
     std::string p = base;
     SDL_free(const_cast<char*>(base));
+    // exe is at: out/build/x64-debug/AirwarCPP/Airwar.exe
+    // repo root: ../../../../ (4 levels up from build dir)
+    p += "..\\..\\..\\..\\";
+    // Normalize: resolve .. segments
+    char full[MAX_PATH];
+    GetFullPathNameA(p.c_str(), MAX_PATH, full, NULL);
+    p = full;
+    if (!p.empty() && p.back() != '\\') p += '\\';
     return p;
 }
 
@@ -52,7 +61,7 @@ int main(int, char**) {
     ShowWindow(GetConsoleWindow(), SW_HIDE);
 #endif
 
-    std::string root = getExeDir();
+    std::string root = getProjectRoot();
     seedRNG();
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
@@ -88,11 +97,10 @@ int main(int, char**) {
     }
 
     // Preload textures
-    texCache.load(root + "Resources\\images\\player1.png");
-    texCache.load(root + "Resources\\images\\en.png");
-    texCache.load(root + "Resources\\images\\missile.png");
-    texCache.load(root + "Resources\\images\\bullet1.png");
-    texCache.load(root + "Resources\\images\\explode1.wav"); // ignore error
+    texCache.load(root + "AirwarCPP\\Resources\\images\\player1.png");
+    texCache.load(root + "AirwarCPP\\Resources\\images\\en.png");
+    texCache.load(root + "AirwarCPP\\Resources\\images\\missile.png");
+    texCache.load(root + "AirwarCPP\\Resources\\images\\bullet1.png");
 
     // Particle groups
     std::vector<std::unique_ptr<ParticleGroup>> particleGroups;
@@ -260,6 +268,30 @@ int main(int, char**) {
 
         hud.update();
         hud.draw(0);
+
+        // Direct sprite rendering (fallback independent of HUD)
+        auto drawSprite = [&](float x, float y, float rot, const std::string& texFile) {
+            auto* t = texCache.load(root + "AirwarCPP\\Resources\\images\\" + texFile);
+            if (t) spr.draw(t, x, y, rot);
+        };
+        for (auto& p : game->board.players)
+            drawSprite((float)p->x, (float)p->y, (float)p->rotation, "player1.png");
+        for (auto& u : game->board.units) {
+            std::string f = "en.png";
+            if (u->image.has_value()) {
+                auto it = ImageNames.find(u->image.value());
+                if (it != ImageNames.end()) f = it->second + ".png";
+            }
+            drawSprite((float)u->x, (float)u->y, (float)u->rotation, f);
+        }
+        for (auto& pj : game->board.projectiles) {
+            std::string f = "bullet1.png";
+            if (pj->image.has_value()) {
+                auto it = ImageNames.find(pj->image.value());
+                if (it != ImageNames.end()) f = it->second + ".png";
+            }
+            drawSprite((float)pj->x, (float)pj->y, (float)pj->rotation, f);
+        }
 
         // Update and draw particles
         for (auto it = particleGroups.begin(); it != particleGroups.end(); ) {
