@@ -25,7 +25,7 @@ set(SDL3_IMAGE_LIB_DIR "${SDL3_IMAGE_DIR}/lib/${SDL_ARCH}")
 set(SDL3_MIXER_LIB_DIR "${SDL3_MIXER_DIR}/lib/${SDL_ARCH}")
 set(SDL3_TTF_LIB_DIR "${SDL3_TTF_DIR}/lib/${SDL_ARCH}")
 
-add_executable(AirwarCPP main.cpp Core/Entity.cpp Core/Level.cpp Game/Item.cpp Game/Board.cpp Game/Game.cpp Render/Background.cpp Render/Particle.cpp)
+add_executable(AirwarCPP main.cpp Core/Entity.cpp Core/Level.cpp Game/Item.cpp Game/Board.cpp Game/Game.cpp Render/Background.cpp Render/Particle.cpp Audio/SoundEngine.h Audio/MusicPlayer.h Config/ConfigPersistence.h UI/InputHandler.h UI/HUD.h UI/GameStateManager.h UI/Tutorial.h)
 
 target_include_directories(AirwarCPP PRIVATE ${SDL3_INCLUDE_DIRS})
 target_link_directories(AirwarCPP PRIVATE
@@ -38,16 +38,12 @@ target_include_directories(AirwarCPP PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(AirwarCPP PRIVATE
     SDL3
     SDL3_image
-    SDL3_mixer
-    SDL3_ttf
 )
 
 function(copy_dlls TARGET)
     set(DLL_FILES
         "${SDL3_LIB_DIR}/SDL3.dll"
         "${SDL3_IMAGE_LIB_DIR}/SDL3_image.dll"
-        "${SDL3_MIXER_LIB_DIR}/SDL3_mixer.dll"
-        "${SDL3_TTF_LIB_DIR}/SDL3_ttf.dll"
     )
     foreach(dll ${DLL_FILES})
         add_custom_command(TARGET ${TARGET} POST_BUILD

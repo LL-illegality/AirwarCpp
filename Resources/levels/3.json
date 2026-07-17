@@ -1,0 +1,257 @@
+{
+    "name": "Level 3",
+    "totalFlags": 13,
+    "drops": [
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        4,
+        4,
+        4,
+        3,
+        3,
+        5,
+        5,
+        5,
+        0,
+        0,
+        0,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7
+    ],
+    "flags": [
+        {
+            "unitTypeList": [
+                "en"
+            ],
+            "timeBeforeNext": 20,
+            "finishCondition": 0
+        },
+        {
+            "unitTypeList": [
+                "enemy2"
+            ],
+            "timeBeforeNext": 20,
+            "finishCondition": 0
+        },
+        {
+            "unitTypeList": [
+                "en",
+                "en",
+                "en",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "test",
+                "en",
+                "en",
+                "en",
+                "enemy2",
+                "enemy2",
+                "enemy2",
+                "en",
+                "en"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "test",
+                "test",
+                "test",
+                "test",
+                "test",
+                "test",
+                "en",
+                "enemy2",
+                "enemy2",
+                "enemy2",
+                "enemy2",
+                "enemy2",
+                "enemy2",
+                "enemy2",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "en",
+                "en",
+                "en",
+                "en",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "en",
+                "en",
+                "enemy3",
+                "enemy4",
+                "enemy5"
+            ],
+            "timeBeforeNext": 60,
+            "finishCondition": 0
+        },
+        {
+            "unitTypeList": [
+                "en",
+                "test",
+                "test",
+                "weakling",
+                "weakling"
+            ],
+            "timeBeforeNext": 60,
+            "finishCondition": 0
+        },
+        {
+            "unitTypeList": [
+                "test",
+                "test",
+                "weakling",
+                "unit1"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "big1",
+                "big1"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "en",
+                "en",
+                "en",
+                "en",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "en",
+                "unit1",
+                "unit1",
+                "weakling",
+                "weakling",
+                "weakling",
+                "weakling",
+                "enemy4",
+                "enemy4",
+                "enemy4",
+                "enemy5",
+                "enemy5",
+                "enemy5",
+                "enemy5",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "lazershooter",
+                "big2"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        },
+        {
+            "unitTypeList": [
+                "big2"
+            ],
+            "timeBeforeNext": 300,
+            "finishCondition": 1
+        }
+    ]
+}
