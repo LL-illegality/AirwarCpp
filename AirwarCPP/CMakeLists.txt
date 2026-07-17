@@ -38,12 +38,14 @@ target_include_directories(AirwarCPP PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(AirwarCPP PRIVATE
     SDL3
     SDL3_image
+    SDL3_ttf
 )
 
 function(copy_dlls TARGET)
     set(DLL_FILES
         "${SDL3_LIB_DIR}/SDL3.dll"
         "${SDL3_IMAGE_LIB_DIR}/SDL3_image.dll"
+        "${SDL3_TTF_LIB_DIR}/SDL3_ttf.dll"
     )
     foreach(dll ${DLL_FILES})
         add_custom_command(TARGET ${TARGET} POST_BUILD

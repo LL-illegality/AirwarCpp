@@ -1,159 +1,240 @@
 #pragma once
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
+#include "../Render/TextureCache.h"
+#include "../Render/SpriteRenderer.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
 
 struct TitleInfo {
     std::string text;
-    int duration = 0;
-    int delay = 0;
+    int duration = 0, delay = 0;
 };
 
 class HUD {
     SDL_Renderer* renderer_ = nullptr;
+    TextureCache* texCache_ = nullptr;
+    SpriteRenderer* spriteRenderer_ = nullptr;
+    TTF_Font* fontSmall_ = nullptr;
+    TTF_Font* fontLarge_ = nullptr;
     int width_ = 800, height_ = 664;
-public:
-    std::vector<TitleInfo> titles_;  // exposed for testing
-private:
-    std::string versionText_ = "Ver. 1.3.1";
+    std::string version_ = "Ver. 1.3.1";
     std::string levelInfo_;
+    std::vector<TitleInfo> titles_;
+    bool fontReady_ = false;
 
-    // Entity snapshot for interpolation
-    struct EntityData {
-        float prevX = 0, prevY = 0, prevRot = 0;
-        float currX = 0, currY = 0, currRot = 0;
-        float health = 100, alpha = 255;
+    struct EntityVis {
+        float prevX=0, prevY=0, prevRot=0, currX=0, currY=0, currRot=0;
+        float health=100;
         std::string image;
         std::string name;
-        int playerId = -1;
-        int magabombQty = 0;
-        bool isReady = false;
-        Uint64 lastUpdate = 0;
+        int playerId=-1, magabombQty=0;
+        bool isReady=false;
+        Uint64 lastUpdate=0;
     };
-    std::unordered_map<int, EntityData> entities_;
+    std::unordered_map<int, EntityVis> entities_;
 
 public:
-    void init(SDL_Renderer* r, int w, int h) { renderer_ = r; width_ = w; height_ = h; }
-
-    void setLevelInfo(const std::string& info) { levelInfo_ = info; }
-    void setTitle(const std::string& text, int duration) {
-        titles_.push_back({text, duration, duration});
+    ~HUD() {
+        if (fontSmall_) TTF_CloseFont(fontSmall_);
+        if (fontLarge_) TTF_CloseFont(fontLarge_);
     }
-    void setVersion(const std::string& v) { versionText_ = v; }
 
-    void updateEntity(int id, float x, float y, float rot, float health,
-                      const std::string& image, const std::string& name = "",
-                      int playerId = -1, int magabombQty = 0, bool isReady = false,
-                      float alpha = 255) {
+    void init(SDL_Renderer* r, TextureCache* tc, SpriteRenderer* sr,
+              const std::string& fontPath, int w, int h) {
+        renderer_ = r; texCache_ = tc; spriteRenderer_ = sr;
+        width_ = w; height_ = h;
+        fontSmall_ = TTF_OpenFont(fontPath.c_str(), 18.0f);
+        fontLarge_ = TTF_OpenFont(fontPath.c_str(), 28.0f);
+        fontReady_ = (fontSmall_ != nullptr);
+        if (!fontReady_) SDL_Log("TTF_OpenFont(%s) failed: %s", fontPath.c_str(), SDL_GetError());
+    }
+
+    void setLevel(const std::string& lvl) { levelInfo_ = lvl; }
+    void setVersion(const std::string& v) { version_ = v; }
+    void addTitle(const std::string& text, int dur) { titles_.push_back({text, dur, dur}); }
+
+    void updateEntity(int id, float x, float y, float rot, float hp,
+                      const std::string& texName, const std::string& name="",
+                      int pid=-1, int bombs=0, bool ready=false) {
         auto& e = entities_[id];
         e.prevX = e.currX; e.prevY = e.currY; e.prevRot = e.currRot;
         e.currX = x; e.currY = y; e.currRot = rot;
-        e.health = health; e.image = image; e.name = name;
-        e.playerId = playerId; e.magabombQty = magabombQty;
-        e.isReady = isReady; e.alpha = alpha;
+        e.health = hp; e.image = texName; e.name = name;
+        e.playerId = pid; e.magabombQty = bombs; e.isReady = ready;
         e.lastUpdate = SDL_GetTicks();
     }
 
     void clearEntities() { entities_.clear(); }
 
     void update() {
-        // Fade titles
         for (auto it = titles_.begin(); it != titles_.end(); ) {
-            it->delay -= 1;
+            --it->delay;
             if (it->delay <= 0) it = titles_.erase(it); else ++it;
         }
     }
 
     void draw(int localPlayerId = -1) {
-        if (!renderer_) return;
-
-        // Draw entities with interpolation
+        if (!renderer_ || !spriteRenderer_) return;
         Uint64 now = SDL_GetTicks();
+
         for (auto& [id, e] : entities_) {
-            float t = (now - e.lastUpdate) / 33.0f;  // 33ms = 1 game tick
-            if (t > 1.0f) t = 1.0f;
+            float t = std::min(1.0f, (now - e.lastUpdate) / 33.0f);
+            float dx = e.prevX + (e.currX - e.prevX) * t;
+            float dy = e.prevY + (e.currY - e.prevY) * t;
+            float dr = e.prevRot + (e.currRot - e.prevRot) * t;
 
-            float drawX = e.prevX + (e.currX - e.prevX) * t;
-            float drawY = e.prevY + (e.currY - e.prevY) * t;
-            float drawRot = e.prevRot + (e.currRot - e.prevRot) * t;
+            // Draw entity sprite from texture cache
+            auto* tex = texCache_ ? texCache_->load(
+                "Resources\\images\\" + e.image + ".png") : nullptr;
+            if (tex) spriteRenderer_->draw(tex, dx, dy, dr);
 
-            // Draw player name above entity
-            if (!e.name.empty()) {
-                // Name text would use TTF — for now skip text rendering
-                // and just mark position with a colored line
-                SDL_SetRenderDrawColor(renderer_, 19, 19, 19, 255);
-                SDL_RenderLine(renderer_, drawX - 10, drawY + 30, drawX + 10, drawY + 30);
+            // Draw player name below sprite
+            if (!e.name.empty() && fontReady_ && fontSmall_) {
+                auto* surf = TTF_RenderText_Blended(fontSmall_, e.name.c_str(),
+                    e.name.size(), {19,19,19,255});
+                if (surf) {
+                    auto* nameTex = SDL_CreateTextureFromSurface(renderer_, surf);
+                    SDL_DestroySurface(surf);
+                    if (nameTex) {
+                        float nw, nh;
+                        SDL_GetTextureSize(nameTex, &nw, &nh);
+                        SDL_FRect nr = {dx - nw/2, dy + 32, nw, nh};
+                        SDL_RenderTexture(renderer_, nameTex, NULL, &nr);
+                        SDL_DestroyTexture(nameTex);
+                    }
+                }
             }
 
-            // Draw ready indicator
-            if (e.isReady && e.playerId >= 0) {
-                SDL_SetRenderDrawColor(renderer_, 0, 192, 0, 255);
-                SDL_FRect r = { drawX - 6, drawY - 48, 12, 12 };
-                SDL_RenderFillRect(renderer_, &r);
+            // Ready indicator
+            if (e.isReady && e.playerId >= 0 && texCache_) {
+                auto* tick = texCache_->load("Resources\\images\\ready.png");
+                if (tick) spriteRenderer_->draw(tick, dx, dy - 48);
             }
 
-            // Draw local player's status bar
+            // Local player status bar
             if (e.playerId == localPlayerId) {
-                drawStateBar(e.name, e.health, e.magabombQty);
+                drawHPBar(e.name, e.health, e.magabombQty);
             }
         }
 
-        // Draw titles
+        // Titles (with fade)
         for (auto& t : titles_) {
-            float fade = (t.delay <= GAME_TICK) ? (float)t.delay / GAME_TICK : 1.0f;
+            float fade = t.delay <= GAME_TICK ? (float)t.delay / GAME_TICK : 1.0f;
             if (fade <= 0) continue;
-            int alpha = (int)(fade * 255);
-            SDL_SetRenderDrawColor(renderer_, 19, 19, 19, alpha);
-            // Title text would use TTF — for now draw a simple rectangle marker
-            SDL_FRect r = { (float)(width_ / 2 - 100), (float)(height_ / 4 - 10), 200, 20 };
-            SDL_RenderFillRect(renderer_, &r);
+            if (fontReady_ && fontLarge_) {
+                SDL_Color c = {19, 19, 19, (Uint8)(fade * 255)};
+                auto* surf = TTF_RenderText_Blended(fontLarge_, t.text.c_str(),
+                    t.text.size(), c);
+                if (surf) {
+                    auto* tex = SDL_CreateTextureFromSurface(renderer_, surf);
+                    SDL_DestroySurface(surf);
+                    if (tex) {
+                        float tw, th; SDL_GetTextureSize(tex, &tw, &th);
+                        SDL_FRect r = {(width_ - tw)/2, (float)(height_/4 - th/2), tw, th};
+                        SDL_RenderTexture(renderer_, tex, NULL, &r);
+                        SDL_DestroyTexture(tex);
+                    }
+                }
+            }
         }
 
-        // Draw level info
-        if (titles_.empty() && !levelInfo_.empty()) {
-            SDL_SetRenderDrawColor(renderer_, 19, 19, 19, 255);
-            SDL_FRect r = { (float)(width_ / 2 - 50), 8, 100, 16 };
-            SDL_RenderFillRect(renderer_, &r);
+        // Level info
+        if (titles_.empty() && !levelInfo_.empty() && fontReady_ && fontSmall_) {
+            SDL_Color c = {19, 19, 19, 255};
+            auto* surf = TTF_RenderText_Blended(fontSmall_, levelInfo_.c_str(),
+                levelInfo_.size(), c);
+            if (surf) {
+                auto* tex = SDL_CreateTextureFromSurface(renderer_, surf);
+                SDL_DestroySurface(surf);
+                if (tex) {
+                    float tw, th; SDL_GetTextureSize(tex, &tw, &th);
+                    SDL_FRect r = {(width_ - tw)/2, 8, tw, th};
+                    SDL_RenderTexture(renderer_, tex, NULL, &r);
+                    SDL_DestroyTexture(tex);
+                }
+            }
         }
 
-        // Draw version in top-right corner
-        SDL_SetRenderDrawColor(renderer_, 19, 19, 19, 128);
-        SDL_FRect verRect = { (float)(width_ - 100), 4, 96, 12 };
-        SDL_RenderFillRect(renderer_, &verRect);
+        // Version in top-right
+        if (fontReady_ && fontSmall_) {
+            SDL_Color c = {19, 19, 19, 255};
+            auto* surf = TTF_RenderText_Blended(fontSmall_, version_.c_str(),
+                version_.size(), c);
+            if (surf) {
+                auto* tex = SDL_CreateTextureFromSurface(renderer_, surf);
+                SDL_DestroySurface(surf);
+                if (tex) {
+                    float tw, th; SDL_GetTextureSize(tex, &tw, &th);
+                    SDL_FRect r = {(float)(width_ - 8 - tw), 4, tw, th};
+                    SDL_RenderTexture(renderer_, tex, NULL, &r);
+                    SDL_DestroyTexture(tex);
+                }
+            }
+        }
     }
 
 private:
-    void drawStateBar(const std::string& name, float health, int magabombQty) {
+    void drawHPBar(const std::string& name, float hp, int bombs) {
         const int barY = height_ - 64;
-        const int barH = 64;
+        if (!fontReady_ || !fontSmall_) return;
 
-        // Background
+        // Background bar
         SDL_SetRenderDrawColor(renderer_, 192, 192, 192, 255);
-        SDL_FRect bg = { 0, (float)barY, (float)width_, (float)barH };
-        SDL_RenderFillRect(renderer_, &bg);
+        SDL_FRect bgRect = {0, (float)barY, (float)width_, 64};
+        SDL_RenderFillRect(renderer_, &bgRect);
 
-        // HP bar border
-        SDL_SetRenderDrawColor(renderer_, 19, 19, 19, 255);
-        SDL_FRect hpBorder = { 35, (float)(barY + 25), 202, 18 };
-        SDL_RenderFillRect(renderer_, &hpBorder);
-
-        // HP bar fill
-        float hpRatio = std::max(0.0f, std::min(1.0f, health / 100.0f));
-        Uint8 hpR = (Uint8)(255 * (1 - hpRatio));
-        Uint8 hpG = (Uint8)(255 * hpRatio);
-        SDL_SetRenderDrawColor(renderer_, hpR, hpG, 0, 255);
-        SDL_FRect hpFill = { 36, (float)(barY + 26), (float)(std::max(0.0, (double)(hpRatio * 200))), 16 };
-        if (hpFill.w > 0) SDL_RenderFillRect(renderer_, &hpFill);
-
-        // Magabomb icons
-        for (int i = 0; i < magabombQty && i < 10; ++i) {
-            SDL_SetRenderDrawColor(renderer_, 200, 50, 50, 255);
-            SDL_FRect bomb = { (float)(width_ - 40 - i * 32), (float)(barY + 28), 8, 8 };
-            SDL_RenderFillRect(renderer_, &bomb);
+        // Player name
+        SDL_Color c = {19, 19, 19, 255};
+        auto* nameSurf = TTF_RenderText_Blended(fontSmall_, ("Player " + name).c_str(),
+            ("Player " + name).size(), c);
+        if (nameSurf) {
+            auto* nTex = SDL_CreateTextureFromSurface(renderer_, nameSurf);
+            SDL_DestroySurface(nameSurf);
+            if (nTex) {
+                float nw, nh; SDL_GetTextureSize(nTex, &nw, &nh);
+                SDL_FRect nr = {0, (float)(barY+4), nw, nh};
+                SDL_RenderTexture(renderer_, nTex, NULL, &nr);
+                SDL_DestroyTexture(nTex);
+            }
         }
 
-        // Draw marker triangle
-        SDL_SetRenderDrawColor(renderer_, 0, 192, 0, 255);
+        // "HP:" label
+        auto* hpSurf = TTF_RenderText_Blended(fontSmall_, "HP:", 3, c);
+        if (hpSurf) {
+            auto* hpTex = SDL_CreateTextureFromSurface(renderer_, hpSurf);
+            SDL_DestroySurface(hpSurf);
+            if (hpTex) {
+                float hw, hh; SDL_GetTextureSize(hpTex, &hw, &hh);
+                SDL_FRect hr = {0, (float)(barY+24), hw, hh};
+                SDL_RenderTexture(renderer_, hpTex, NULL, &hr);
+                SDL_DestroyTexture(hpTex);
+            }
+        }
+
+        // HP bar border and fill
+        SDL_SetRenderDrawColor(renderer_, 19, 19, 19, 255);
+        SDL_FRect hpBorder = {35, (float)(barY+25), 202, 18};
+        SDL_RenderFillRect(renderer_, &hpBorder);
+        float ratio = std::max(0.0f, std::min(1.0f, hp / 100.0f));
+        SDL_SetRenderDrawColor(renderer_,
+            (Uint8)(255*(1-ratio)), (Uint8)(255*ratio), 0, 255);
+        if (ratio > 0) {
+            SDL_FRect hpFill = {36, (float)(barY+26), (float)(ratio*200), 16};
+            SDL_RenderFillRect(renderer_, &hpFill);
+        }
+
+        // Magabomb icons (textured)
+        if (texCache_) {
+            auto* bombTex = texCache_->load("Resources\\images\\item_maga.png");
+            if (bombTex) {
+                float bw, bh; SDL_GetTextureSize(bombTex, &bw, &bh);
+                for (int i = 0; i < bombs && i < 10; ++i) {
+                    SDL_FRect r = {(float)(width_ - 24 - i*28), (float)(barY+18), bw, bh};
+                    SDL_RenderTexture(renderer_, bombTex, NULL, &r);
+                }
+            }
+        }
     }
 };
