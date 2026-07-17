@@ -101,7 +101,7 @@ struct LevelLoader {
     std::vector<Level> levelData;
     nlohmann::json enemyTypes;
 
-    explicit LevelLoader(std::string path_ = ".\\levels")
+    explicit LevelLoader(std::string path_ = "AirwarCPP\\Resources\\levels")
         : path(std::move(path_)) {}
 
     void loadLevels() {

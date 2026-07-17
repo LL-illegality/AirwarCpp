@@ -21,8 +21,8 @@ class MusicPlayer {
 
     Song getSong(const std::string& key) const {
         return {
-            assetRoot_ + "Resources\\music\\" + key + "_intro.wav",
-            assetRoot_ + "Resources\\music\\" + key + ".wav"
+            assetRoot_ + "AirwarCPP\\Resources\\music\\" + key + "_intro.wav",
+            assetRoot_ + "AirwarCPP\\Resources\\music\\" + key + ".wav"
         };
     }
 
@@ -49,7 +49,7 @@ public:
 
     bool loadAll() {
         // Load mainmenu
-        auto path = assetRoot_ + "Resources\\music\\mainmenu.wav";
+        auto path = assetRoot_ + "AirwarCPP\\Resources\\music\\mainmenu.wav";
         if (!engine_->load("mainmenu", path)) return false;
 
         // Load song intros + loops

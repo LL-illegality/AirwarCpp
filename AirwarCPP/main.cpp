@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <cmath>
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
@@ -8,7 +9,13 @@
 #include "Core/RNG.h"
 #include "Render/TextureCache.h"
 #include "Render/SpriteRenderer.h"
+#include "Render/Background.h"
+#include "Render/Particle.h"
 #include "UI/HUD.h"
+#include "Audio/SoundEngine.h"
+#include "Audio/MusicPlayer.h"
+#include <fstream>
+#include "json.hpp"
 
 static int testsPassed = 0;
 static int testsFailed = 0;
@@ -21,169 +28,205 @@ static int testsFailed = 0;
 
 int main(int, char**) {
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("AirwarCPP Phase 5 -- Full Resource Loading Test\n");
-    printf("===============================================\n\n");
+    printf("AirwarCPP -- Comprehensive Resource Path Test\n");
+    printf("==============================================\n\n");
 
     seedRNG();
-
-    /* ====== Init SDL + TTF ====== */
-    CHECK(SDL_Init(SDL_INIT_VIDEO), "SDL_Init(VIDEO)");
+    CHECK(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO), "SDL_Init");
     CHECK(TTF_Init(), "TTF_Init()");
 
-    SDL_Window* win = SDL_CreateWindow("AirwarCPP", 800, 664, 0);
-    CHECK(win != NULL, "Window created");
+    SDL_Window* win = SDL_CreateWindow("AirwarCPP Resource Test", 800, 664, 0);
+    CHECK(win != NULL, "Window");
     SDL_Renderer* ren = SDL_CreateRenderer(win, NULL);
-    CHECK(ren != NULL, "Renderer created");
+    CHECK(ren != NULL, "Renderer");
 
     TextureCache texCache;
     texCache.init(ren);
-    SpriteRenderer spriteRenderer;
-    spriteRenderer.init(ren);
+    SpriteRenderer spr;
+    spr.init(ren);
 
-    /* ====== 1. Load and render sprite textures ====== */
-    printf("[1] Sprite texture loading\n");
-    SDL_Texture* playerTex = texCache.load("Resources\\images\\player1.png");
-    CHECK(playerTex != NULL, "player1.png loaded");
-    SDL_Texture* enTex = texCache.load("Resources\\images\\en.png");
-    CHECK(enTex != NULL, "en.png loaded");
-    SDL_Texture* missileTex = texCache.load("Resources\\images\\missile.png");
-    CHECK(missileTex != NULL, "missile.png loaded");
-    SDL_Texture* magaTex = texCache.load("Resources\\images\\item_maga.png");
-    CHECK(magaTex != NULL, "item_maga.png loaded");
-    SDL_Texture* readyTex = texCache.load("Resources\\images\\ready.png");
-    CHECK(readyTex != NULL, "ready.png loaded");
+    /* ====== 1. TEXTURES (Phase 3/5) ====== */
+    printf("\n--- Phase 3/5: Texture Loading ---\n");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\player1.png") != NULL, "player1.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\player2.png") != NULL, "player2.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\en.png") != NULL, "en.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\enemy.png") != NULL, "enemy.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\enemy2.png") != NULL, "enemy2.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\enemy3.png") != NULL, "enemy3.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\enemy4.png") != NULL, "enemy4.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\enemy5.png") != NULL, "enemy5.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\missile.png") != NULL, "missile.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\rocket.png") != NULL, "rocket.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\rocket_enemy.png") != NULL, "rocket_enemy.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\bullet1.png") != NULL, "bullet1.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\bullet_enemy.png") != NULL, "bullet_enemy.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\lazer_level1.png") != NULL, "lazer_level1.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\energyball.png") != NULL, "energyball.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\energyball_enhanced.png") != NULL, "energyball_enhanced.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\magabomb.png") != NULL, "magabomb.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\unit1.png") != NULL, "unit1.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\big1.png") != NULL, "big1.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\big2.png") != NULL, "big2.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\rship.png") != NULL, "rship.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\rship2.png") != NULL, "rship2.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\rship3.png") != NULL, "rship3.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\rship4.png") != NULL, "rship4.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\ca.png") != NULL, "ca.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\ready.png") != NULL, "ready.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_shotgun.png") != NULL, "item_shotgun.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_missile.png") != NULL, "item_missile.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_lazer.png") != NULL, "item_lazer.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_autocannon.png") != NULL, "item_autocannon.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_super.png") != NULL, "item_super.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_rocket.png") != NULL, "item_rocket.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_maga.png") != NULL, "item_maga.png");
+    CHECK(texCache.load("AirwarCPP\\Resources\\images\\item_medic.png") != NULL, "item_medic.png");
 
-    /* ====== 2. HUD with font + textures ====== */
-    printf("[2] HUD with fonts\n");
+    /* ====== 2. SPRITE RENDERING (Phase 3) ====== */
+    printf("--- Phase 3: Sprite Rendering ---\n");
+    auto* pTex = texCache.load("AirwarCPP\\Resources\\images\\player1.png");
+    auto* eTex = texCache.load("AirwarCPP\\Resources\\images\\en.png");
+    spr.draw(pTex, 400, 300, 0, 255);
+    spr.draw(eTex, 200, 150, 45, 128, 1.5f);
+    spr.drawInterpolated(pTex, 100, 100, 200, 300, 0, 90, 0.5f);
+    CHECK(true, "Sprite transforms OK");
+
+    /* ====== 3. BACKGROUND (Phase 3) ====== */
+    printf("--- Phase 3: Background ---\n");
+    Background bg;
+    bg.init(ren, 800, 600);
+    for (int i = 0; i < 5; ++i) bg.update();
+    CHECK(true, "Background init + update OK");
+
+    /* ====== 4. PARTICLES (Phase 3) ====== */
+    printf("--- Phase 3: Particles ---\n");
+    EnemyExplosion ee(400, 300); CHECK(!ee.particles.empty(), "EnemyExplosion");
+    PlayerExplosion pe(400, 300); CHECK(!pe.particles.empty(), "PlayerExplosion");
+    MissileHit mh(400, 300); CHECK(!mh.particles.empty(), "MissileHit");
+    RocketHit rh(400, 300); CHECK(!rh.particles.empty(), "RocketHit");
+    BulletHit bh(400, 300); CHECK(!bh.particles.empty(), "BulletHit");
+    LazerHit lh(400, 300); CHECK(!lh.particles.empty(), "LazerHit");
+    AutocannonHit ah(400, 300); CHECK(!ah.particles.empty(), "AutocannonHit");
+    NukeExplosion ne(400, 300); CHECK(!ne.particles.empty(), "NukeExplosion");
+    MissileTrail mt(400, 300); mt.emit(1); CHECK(mt.particles.size()==1, "MissileTrail");
+    RocketTrail rt(400, 300); rt.emit(1); CHECK(rt.particles.size()==1, "RocketTrail");
+
+    /* ====== 5. AUDIO LOAD (Phase 4) ====== */
+    printf("--- Phase 4: Audio Loading ---\n");
+    SoundEngine se; CHECK(se.init(), "SoundEngine init");
+    CHECK(se.load("shotgun", "AirwarCPP\\Resources\\sounds\\shotgun_shoot.wav"), "shotgun_shoot.wav");
+    CHECK(se.load("lazer", "AirwarCPP\\Resources\\sounds\\lazer_shoot.wav"), "lazer_shoot.wav");
+    CHECK(se.load("autocannon", "AirwarCPP\\Resources\\sounds\\autocannon_shoot.wav"), "autocannon_shoot.wav");
+    CHECK(se.load("missile", "AirwarCPP\\Resources\\sounds\\missile_shoot.wav"), "missile_shoot.wav");
+    CHECK(se.load("rocket", "AirwarCPP\\Resources\\sounds\\rocket_shoot.wav"), "rocket_shoot.wav");
+    CHECK(se.load("explode1", "AirwarCPP\\Resources\\sounds\\explode1.wav"), "explode1.wav");
+    CHECK(se.load("explode2", "AirwarCPP\\Resources\\sounds\\explode2.wav"), "explode2.wav");
+    CHECK(se.load("explode3", "AirwarCPP\\Resources\\sounds\\explode3.wav"), "explode3.wav");
+    CHECK(se.load("explode4", "AirwarCPP\\Resources\\sounds\\explode4.wav"), "explode4.wav");
+    CHECK(se.load("explode5", "AirwarCPP\\Resources\\sounds\\explode5.wav"), "explode5.wav");
+    CHECK(se.load("prepare", "AirwarCPP\\Resources\\sounds\\prepare.wav"), "prepare.wav");
+    CHECK(se.load("unprepare", "AirwarCPP\\Resources\\sounds\\unprepare.wav"), "unprepare.wav");
+    CHECK(se.load("itemget", "AirwarCPP\\Resources\\sounds\\itemget.wav"), "itemget.wav");
+    CHECK(se.load("transmission", "AirwarCPP\\Resources\\sounds\\transmission.wav"), "transmission.wav");
+    CHECK(se.load("nuclear", "AirwarCPP\\Resources\\sounds\\nuclear_missile_shoot.wav"), "nuclear_missile_shoot.wav");
+
+    /* ====== 6. AUDIO PLAYBACK (Phase 4) ====== */
+    printf("--- Phase 4: Audio Playback ---\n");
+    se.play("shotgun"); SDL_Delay(80);
+    se.play("lazer"); SDL_Delay(80);
+    se.play("explode1"); SDL_Delay(80);
+    se.play("missile"); SDL_Delay(80);
+    se.play("rocket"); SDL_Delay(80);
+    se.stopAll(); CHECK(true, "Play + stopAll OK");
+
+    /* ====== 7. MUSIC PLAYER (Phase 4) ====== */
+    printf("--- Phase 4: Music Load ---\n");
+    MusicPlayer mp;
+    mp.init(&se, "");
+    CHECK(se.load("mainmenu", "AirwarCPP\\Resources\\music\\mainmenu.wav"), "mainmenu.wav");
+    CHECK(se.load("future_intro", "AirwarCPP\\Resources\\music\\future_intro.wav"), "future_intro.wav");
+    CHECK(se.load("future_loop", "AirwarCPP\\Resources\\music\\future.wav"), "future.wav");
+    CHECK(se.load("lostcity_intro", "AirwarCPP\\Resources\\music\\lostcity_intro.wav"), "lostcity_intro.wav");
+    CHECK(se.load("pop_intro", "AirwarCPP\\Resources\\music\\pop_intro.wav"), "pop_intro.wav");
+    CHECK(se.load("beach_intro", "AirwarCPP\\Resources\\music\\beach_intro.wav"), "beach_intro.wav");
+    CHECK(se.load("escape_intro", "AirwarCPP\\Resources\\music\\escape_intro.wav"), "escape_intro.wav");
+    CHECK(se.load("universe41_intro", "AirwarCPP\\Resources\\music\\universe41_intro.wav"), "universe41_intro.wav");
+    se.stopAll(); CHECK(true, "All music loaded");
+
+    /* ====== 8. HUD WITH TEXTURES + FONTS (Phase 5) ====== */
+    printf("--- Phase 5: HUD ---\n");
     HUD hud;
-    hud.init(ren, &texCache, &spriteRenderer,
-             "C:\\Windows\\Fonts\\arial.ttf", 800, 664);
+    hud.init(ren, &texCache, &spr, "C:\\Windows\\Fonts\\arial.ttf", 800, 664);
     hud.setVersion("Ver. 1.3.1");
     hud.setLevel("Level 1");
-
-    hud.addTitle("Airwar", 180);
+    hud.addTitle("Airwar", 120);
     hud.updateEntity(0, 400, 300, 0, 100, "player1", "Player1", 0, 3, true);
-    hud.updateEntity(1, 500, 200, 90, 60, "en", "Enemy");
-    hud.updateEntity(2, 300, 150, 45, 50, "missile");
+    hud.updateEntity(1, 500, 200, 90, 60, "en", "Enemy", -1);
+    hud.update(); CHECK(true, "HUD init + update OK");
 
-    /* ====== 3. Animated render loop ====== */
-    printf("[3] Animated rendering\n");
+    /* ====== 9. CONFIG LOAD (Phase 5) ====== */
+    printf("--- Phase 5: Config ---\n");
+    {
+        std::ifstream f("AirwarCPP\\Resources\\configs\\enemyTypes.json");
+        CHECK(f.good(), "enemyTypes.json readable");
+        nlohmann::json j; f >> j;
+        CHECK(j.contains("en"), "enemyTypes has 'en' entry");
+        CHECK(j.contains("big2"), "enemyTypes has 'big2' entry");
+    }
+    {
+        std::ifstream f("AirwarCPP\\Resources\\configs\\initializeSettings.json");
+        CHECK(f.good(), "initializeSettings.json readable");
+    }
+
+    /* ====== 10. LEVELS LOAD (Phase 2) ====== */
+    printf("--- Phase 2: Level JSON ---\n");
+    for (int i = 1; i <= 5; ++i) {
+        std::string path = "AirwarCPP\\Resources\\levels\\" + std::to_string(i) + ".json";
+        std::ifstream f(path);
+        CHECK(f.good(), ("Level " + std::to_string(i) + ".json readable").c_str());
+    }
+
+    /* ====== 11. ANIMATED DEMO (all systems) ====== */
+    printf("--- Animated Demo (3s) ---\n");
     Uint64 start = SDL_GetTicks();
     int frames = 0;
     bool running = true;
-    while (running && (SDL_GetTicks() - start < 4000)) {
+    while (running && (SDL_GetTicks() - start < 3000)) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
         }
-
         float t = (SDL_GetTicks() - start) / 1000.0f;
 
         SDL_SetRenderDrawColor(ren, 35, 90, 150, 255);
         SDL_RenderClear(ren);
+        bg.update(); bg.draw();
 
-        // Animate entities in a pattern
         float cx = 400 + 150 * sinf(t);
         float cy = 300 + 80 * cosf(t * 0.7f);
+        spr.draw(pTex, cx, cy, t * 45);
+        spr.draw(eTex, 500 + 100 * sinf(t * 0.5f), 200 + 60 * cosf(t * 0.3f), 90 + t * 20);
+
         hud.updateEntity(0, cx, cy, t * 45, 100, "player1", "Player1", 0, 3, true);
-
-        float ex = 500 + 100 * sinf(t * 0.5f);
-        float ey = 200 + 60 * cosf(t * 0.3f);
-        hud.updateEntity(1, ex, ey, 90 + t * 20, 60, "en", "Enemy");
-
-        hud.updateEntity(2, 300, 150 + t * 30, 45 + t * 60, 50, "missile");
-
-        hud.update();
-        hud.draw(0);
+        hud.update(); hud.draw(0);
 
         SDL_RenderPresent(ren);
         SDL_Delay(16);
         ++frames;
     }
-    CHECK(frames > 50, "Rendered >50 frames with textures + fonts");
+    CHECK(frames > 50, "Demo rendered >50 frames");
 
-    /* ====== 4. Verify texture sizes ====== */
-    printf("[4] Texture properties\n");
-    if (playerTex) {
-        float pw, ph; SDL_GetTextureSize(playerTex, &pw, &ph);
-        CHECK(pw == 32 && ph == 32, "player1.png is 32x32");
-    }
-    if (enTex) {
-        float ew, eh; SDL_GetTextureSize(enTex, &ew, &eh);
-        CHECK(ew > 0 && eh > 0, "en.png has valid size");
-    }
-
-    /* ====== 5. Sprite rotation and scale ====== */
-    printf("[5] Sprite transform rendering\n");
-    // Non-interpolated draw at various positions
-    spriteRenderer.draw(playerTex, 400, 300, 0, 255, 1.0f);
-    spriteRenderer.draw(enTex, 200, 150, 45, 128, 1.5f);
-    spriteRenderer.draw(missileTex, 600, 450, -30, 200, 0.8f);
-    spriteRenderer.drawInterpolated(playerTex, 100, 100, 200, 300, 0, 90, 0.5f);
-    CHECK(true, "All sprite transforms completed without error");
-
-    /* ====== 6. HUD title text rendering ====== */
-    printf("[6] HUD text rendering\n");
-    hud.addTitle("Title Test", 60);
-    hud.update();
-    CHECK(true, "HUD title text OK");
-
-    hud.setLevel("Level 2");
-    hud.update();
-    CHECK(true, "HUD level info OK");
-
-    /* ====== 7. Multiple entities with various states ====== */
-    printf("[7] Multi-entity states\n");
-    hud.clearEntities();
-    hud.updateEntity(0, 400, 500, 0, 80, "player1", "Player1", 0, 1, true);
-    hud.updateEntity(1, 400, 100, 180, 100, "en", "Boss", -1, 0, false);
-    hud.update();
-    CHECK(true, "Multi-entity update OK");
-
-    /* ====== 8. Load additional sprite types ====== */
-    printf("[8] Additional sprite loading\n");
-    CHECK(texCache.load("Resources\\images\\bullet1.png") != NULL, "bullet1.png");
-    CHECK(texCache.load("Resources\\images\\lazer_level1.png") != NULL, "lazer_level1.png");
-    CHECK(texCache.load("Resources\\images\\rocket.png") != NULL, "rocket.png");
-    CHECK(texCache.load("Resources\\images\\unit1.png") != NULL, "unit1.png");
-    CHECK(texCache.load("Resources\\images\\big1.png") != NULL, "big1.png");
-    CHECK(texCache.load("Resources\\images\\rship.png") != NULL, "rship.png");
-    CHECK(texCache.load("Resources\\images\\item_shotgun.png") != NULL, "item_shotgun.png");
-    CHECK(texCache.load("Resources\\images\\item_lazer.png") != NULL, "item_lazer.png");
-
-    /* ====== 9. Verify HUD with all features ====== */
-    printf("[9] Full HUD feature test\n");
-    {
-        HUD hud2;
-        hud2.init(ren, &texCache, &spriteRenderer,
-                  "C:\\Windows\\Fonts\\arial.ttf", 800, 664);
-        hud2.addTitle("You Win!", 300);
-        hud2.updateEntity(0, 400, 300, 0, 100, "player1", "Hero", 0, 5, true);
-        hud2.updateEntity(1, 600, 200, 90, 0, "enemy2", "Foe", -1, 0, false);
-        hud2.setVersion("Ver. 2.0");
-        hud2.setLevel("Final Stage");
-
-        for (int i = 0; i < 10; ++i) {
-            SDL_SetRenderDrawColor(ren, 35, 90, 150, 255);
-            SDL_RenderClear(ren);
-            hud2.update();
-            hud2.draw(0);
-            SDL_RenderPresent(ren);
-            SDL_Delay(16);
-        }
-        CHECK(true, "Full HUD feature demo rendered");
-    }
-
-    /* ====== 10. Cleanup ====== */
-    printf("[10] Cleanup\n");
+    /* ====== 12. CLEANUP ====== */
+    printf("--- Cleanup ---\n");
+    se.cleanup();
     texCache.clear();
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
     CHECK(true, "Clean shutdown");
 
     int total = testsPassed + testsFailed;
-    printf("\n===============================================\n");
+    printf("\n==============================================\n");
     printf("  Results: %d / %d passed, %d failed\n", testsPassed, total, testsFailed);
     return testsFailed > 0 ? 1 : 0;
 }

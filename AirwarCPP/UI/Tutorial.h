@@ -23,14 +23,14 @@ public:
     }
 
     void loadConfig(const std::string& assetRoot) {
-        auto cfg = GameConfig::load(assetRoot + "Resources\\configs\\initializeSettings.json");
+        auto cfg = GameConfig::load(assetRoot + "AirwarCPP\\Resources\\configs\\initializeSettings.json");
         enabled_ = cfg.showTutorial;
     }
 
     void saveConfig(const std::string& assetRoot) {
-        auto cfg = GameConfig::load(assetRoot + "Resources\\configs\\initializeSettings.json");
+        auto cfg = GameConfig::load(assetRoot + "AirwarCPP\\Resources\\configs\\initializeSettings.json");
         cfg.showTutorial = false;
-        GameConfig::save(assetRoot + "Resources\\configs\\initializeSettings.json", cfg);
+        GameConfig::save(assetRoot + "AirwarCPP\\Resources\\configs\\initializeSettings.json", cfg);
     }
 
     bool shouldShow() const { return enabled_; }

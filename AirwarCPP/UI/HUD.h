@@ -87,7 +87,7 @@ public:
 
             // Draw entity sprite from texture cache
             auto* tex = texCache_ ? texCache_->load(
-                "Resources\\images\\" + e.image + ".png") : nullptr;
+                "AirwarCPP\\Resources\\images\\" + e.image + ".png") : nullptr;
             if (tex) spriteRenderer_->draw(tex, dx, dy, dr);
 
             // Draw player name below sprite
@@ -109,7 +109,7 @@ public:
 
             // Ready indicator
             if (e.isReady && e.playerId >= 0 && texCache_) {
-                auto* tick = texCache_->load("Resources\\images\\ready.png");
+                auto* tick = texCache_->load("AirwarCPP\\Resources\\images\\ready.png");
                 if (tick) spriteRenderer_->draw(tick, dx, dy - 48);
             }
 
@@ -227,7 +227,7 @@ private:
 
         // Magabomb icons (textured)
         if (texCache_) {
-            auto* bombTex = texCache_->load("Resources\\images\\item_maga.png");
+            auto* bombTex = texCache_->load("AirwarCPP\\Resources\\images\\item_maga.png");
             if (bombTex) {
                 float bw, bh; SDL_GetTextureSize(bombTex, &bw, &bh);
                 for (int i = 0; i < bombs && i < 10; ++i) {
